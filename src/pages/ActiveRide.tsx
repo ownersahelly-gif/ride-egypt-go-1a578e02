@@ -56,6 +56,7 @@ const ActiveRide = () => {
         const orderB = b.stops?.stop_order ?? 999;
         return orderA - orderB;
       });
+      setBookings(bks);
 
       // Determine phase
       const allBoarded = bks.length > 0 && bks.every(b => b.status === 'boarded' || b.boarded_at);
