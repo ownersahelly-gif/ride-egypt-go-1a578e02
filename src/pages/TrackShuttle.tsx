@@ -86,8 +86,7 @@ const TrackShuttle = () => {
         body,
         icon: '/favicon.ico',
         tag: 'shuttle-approaching',
-        vibrate: [200, 100, 200],
-      });
+      } as NotificationOptions);
       setNotificationSent(true);
     }
   }, [shuttle?.current_lat, shuttle?.current_lng, booking, route, notificationSent, notifPermission, lang, etaMinutes]);
