@@ -241,6 +241,15 @@ const AdminPanel = () => {
                 })}
               </div>
             </div>
+
+            {/* Seed Test Data */}
+            <div className="bg-card border border-border rounded-xl p-6">
+              <h3 className="font-semibold text-foreground mb-2">{lang === 'ar' ? 'بيانات تجريبية' : 'Test Data'}</h3>
+              <p className="text-sm text-muted-foreground mb-4">{lang === 'ar' ? 'إضافة مسارات وشاتلات ورحلات تجريبية' : 'Add sample routes, shuttles, and ride instances for testing'}</p>
+              <Button onClick={seedTestData} variant="outline">
+                <Database className="w-4 h-4 me-1" />{lang === 'ar' ? 'إضافة بيانات تجريبية' : 'Seed Test Data'}
+              </Button>
+            </div>
           </div>
         )}
 
