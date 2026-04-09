@@ -100,14 +100,29 @@ const Dashboard = () => {
             <h3 className="font-semibold text-foreground">{t('dashboard.requestRoute')}</h3>
             <p className="text-sm text-muted-foreground mt-1">{t('dashboard.requestRouteDesc')}</p>
           </Link>
+          {isAdmin && (
+            <Link to="/admin" className="bg-card border border-border rounded-2xl p-6 hover:border-destructive/40 hover:shadow-card-hover transition-all group">
+              <div className="w-12 h-12 rounded-xl bg-destructive/10 flex items-center justify-center mb-4 group-hover:bg-destructive/20">
+                <Shield className="w-6 h-6 text-destructive" />
+              </div>
+              <h3 className="font-semibold text-foreground">{lang === 'ar' ? 'لوحة الإدارة' : 'Admin Panel'}</h3>
+              <p className="text-sm text-muted-foreground mt-1">{lang === 'ar' ? 'إدارة المسارات والسائقين والحجوزات' : 'Manage routes, drivers & bookings'}</p>
+            </Link>
+          )}
+
+          {isDriver && (
+            <Link to="/driver-dashboard" className="bg-card border border-border rounded-2xl p-6 hover:border-secondary/40 hover:shadow-card-hover transition-all group">
+              <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center mb-4 group-hover:bg-secondary/20">
+                <Car className="w-6 h-6 text-secondary" />
+              </div>
+              <h3 className="font-semibold text-foreground">{lang === 'ar' ? 'لوحة السائق' : 'Driver Dashboard'}</h3>
+              <p className="text-sm text-muted-foreground mt-1">{lang === 'ar' ? 'إدارة رحلاتك والركاب' : 'Manage your rides & passengers'}</p>
+            </Link>
+          )}
         </div>
 
         {/* Recent Bookings */}
         <div>
-          <h2 className="text-xl font-bold text-foreground mb-4">{t('dashboard.recentBookings')}</h2>
-          {bookings.length === 0 ? (
-            <div className="bg-card rounded-2xl border border-border p-12 text-center">
-              <Ticket className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
               <p className="text-muted-foreground">{t('dashboard.noBookings')}</p>
               <Link to="/book">
                 <Button className="mt-4">{t('dashboard.bookFirst')}</Button>
