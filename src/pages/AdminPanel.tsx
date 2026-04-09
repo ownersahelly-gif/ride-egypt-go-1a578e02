@@ -12,10 +12,10 @@ import MapView from '@/components/MapView';
 import {
   ChevronLeft, Route, Users, Car, Ticket, BarChart3, Plus, Edit, Trash2,
   CheckCircle2, XCircle, MapPin, Clock, Search, Globe, LogOut, Shield,
-  Loader2, Eye, Database
+  Loader2, Eye, Database, Settings, Phone
 } from 'lucide-react';
 
-type AdminTab = 'routes' | 'drivers' | 'shuttles' | 'bookings' | 'analytics' | 'approvals';
+type AdminTab = 'routes' | 'drivers' | 'shuttles' | 'bookings' | 'analytics' | 'approvals' | 'settings';
 
 const AdminPanel = () => {
   const { user, signOut } = useAuth();
@@ -25,6 +25,10 @@ const AdminPanel = () => {
   const [tab, setTab] = useState<AdminTab>('analytics');
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+
+  // InstaPay settings
+  const [instapayPhone, setInstapayPhone] = useState('');
+  const [savingPhone, setSavingPhone] = useState(false);
 
   // Data states
   const [routes, setRoutes] = useState<any[]>([]);
@@ -56,12 +60,15 @@ const AdminPanel = () => {
   }, [user]);
 
   const fetchAllData = async () => {
-    const [routesRes, appsRes, shuttlesRes, bookingsRes] = await Promise.all([
+    const [routesRes, appsRes, shuttlesRes, bookingsRes, settingsRes] = await Promise.all([
       supabase.from('routes').select('*').order('created_at', { ascending: false }),
       supabase.from('driver_applications').select('*').order('created_at', { ascending: false }),
       supabase.from('shuttles').select('*, routes(name_en, name_ar)').order('created_at', { ascending: false }),
       supabase.from('bookings').select('*, routes(name_en, name_ar)').order('created_at', { ascending: true }).limit(200),
+      supabase.from('app_settings').select('*').eq('key', 'instapay_phone').single(),
     ]);
+
+    if (settingsRes.data) setInstapayPhone(settingsRes.data.value);
 
     setRoutes(routesRes.data || []);
     setApplications(appsRes.data || []);
@@ -86,6 +93,17 @@ const AdminPanel = () => {
       pendingApps: (appsRes.data || []).filter(a => a.status === 'pending').length,
     });
     setLoading(false);
+  };
+
+  const saveInstapayPhone = async () => {
+    setSavingPhone(true);
+    const { error } = await supabase.from('app_settings').upsert(
+      { key: 'instapay_phone', value: instapayPhone },
+      { onConflict: 'key' }
+    );
+    if (error) toast.error(error.message);
+    else toast.success(lang === 'ar' ? 'تم حفظ رقم InstaPay' : 'InstaPay number saved');
+    setSavingPhone(false);
   };
 
   const createRoute = async () => {
@@ -292,6 +310,7 @@ const AdminPanel = () => {
     { key: 'drivers', icon: Users, label: lang === 'ar' ? 'السائقين' : 'Drivers' },
     { key: 'shuttles', icon: Car, label: lang === 'ar' ? 'الشاتلات' : 'Shuttles' },
     { key: 'bookings', icon: Ticket, label: lang === 'ar' ? 'الحجوزات' : 'Bookings' },
+    { key: 'settings', icon: Settings, label: lang === 'ar' ? 'الإعدادات' : 'Settings' },
   ];
 
   const statusColors: Record<string, string> = {
@@ -748,6 +767,37 @@ const AdminPanel = () => {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Settings Tab */}
+        {tab === 'settings' && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold text-foreground">{lang === 'ar' ? 'الإعدادات' : 'Settings'}</h2>
+
+            <div className="bg-card border border-border rounded-xl p-6 max-w-lg">
+              <h3 className="font-semibold text-foreground mb-1 flex items-center gap-2">
+                <Phone className="w-5 h-5 text-primary" />
+                {lang === 'ar' ? 'رقم InstaPay' : 'InstaPay Phone Number'}
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                {lang === 'ar'
+                  ? 'الرقم الذي سيظهر للركاب لتحويل المبلغ عبر InstaPay'
+                  : 'This number will be shown to passengers so they can transfer payment via InstaPay'}
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  value={instapayPhone}
+                  onChange={(e) => setInstapayPhone(e.target.value)}
+                  placeholder="01XXXXXXXXX"
+                  className="font-mono"
+                  dir="ltr"
+                />
+                <Button onClick={saveInstapayPhone} disabled={savingPhone}>
+                  {savingPhone ? <Loader2 className="w-4 h-4 animate-spin" /> : (lang === 'ar' ? 'حفظ' : 'Save')}
+                </Button>
+              </div>
+            </div>
           </div>
         )}
       </div>

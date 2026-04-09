@@ -12,7 +12,7 @@ import PlacesAutocomplete from '@/components/PlacesAutocomplete';
 import {
   MapPin, Clock, Users, ArrowRight, Search, ChevronLeft, ChevronRight,
   Calendar, AlertCircle, Car, User as UserIcon, Loader2, CheckCircle2, XCircle,
-  Navigation, Upload, Image as ImageIcon, ListOrdered
+  Navigation, Upload, Image as ImageIcon, ListOrdered, Phone
 } from 'lucide-react';
 
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -263,7 +263,14 @@ const BookRide = () => {
   const [paymentProof, setPaymentProof] = useState<File | null>(null);
   const [paymentPreview, setPaymentPreview] = useState<string | null>(null);
   const [uploadingProof, setUploadingProof] = useState(false);
+  const [instapayPhone, setInstapayPhone] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch InstaPay phone number
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('key', 'instapay_phone').single()
+      .then(({ data }) => { if (data) setInstapayPhone(data.value); });
+  }, []);
 
   const handlePaymentFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -781,6 +788,15 @@ const BookRide = () => {
               <div className="bg-surface rounded-xl p-4 text-sm text-muted-foreground space-y-2">
                 <p>{lang === 'ar' ? 'حوّل المبلغ عبر InstaPay ثم ارفع لقطة شاشة للتحويل:' : 'Transfer the amount via InstaPay then upload a screenshot:'}</p>
                 <p className="font-bold text-foreground text-lg">{selectedRide.routes?.price} EGP</p>
+                {instapayPhone && (
+                  <div className="flex items-center gap-2 bg-card border border-border rounded-lg p-3 mt-2">
+                    <Phone className="w-5 h-5 text-primary shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'حوّل إلى هذا الرقم:' : 'Transfer to this number:'}</p>
+                      <p className="font-bold text-foreground text-lg font-mono" dir="ltr">{instapayPhone}</p>
+                    </div>
+                  </div>
+                )}
                 <p className="text-xs">{lang === 'ar' ? 'سيتم مراجعة الدفع من قبل المسؤول' : 'Payment will be reviewed by admin'}</p>
               </div>
 
