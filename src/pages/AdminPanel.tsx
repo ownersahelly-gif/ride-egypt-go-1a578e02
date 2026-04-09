@@ -15,7 +15,7 @@ import {
   Loader2, Eye, Database
 } from 'lucide-react';
 
-type AdminTab = 'routes' | 'drivers' | 'shuttles' | 'bookings' | 'analytics';
+type AdminTab = 'routes' | 'drivers' | 'shuttles' | 'bookings' | 'analytics' | 'approvals';
 
 const AdminPanel = () => {
   const { user, signOut } = useAuth();
