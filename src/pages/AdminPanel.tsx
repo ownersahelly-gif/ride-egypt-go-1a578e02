@@ -139,6 +139,104 @@ const AdminPanel = () => {
     toast.success('Route deactivated');
   };
 
+  const seedTestData = async () => {
+    try {
+      // 1. Create test routes
+      const testRoutes = [
+        {
+          name_en: 'Madinaty - Smart Village', name_ar: 'مدينتي - القرية الذكية',
+          origin_name_en: 'Madinaty Gate 1', origin_name_ar: 'بوابة مدينتي 1',
+          destination_name_en: 'Smart Village', destination_name_ar: 'القرية الذكية',
+          origin_lat: 30.1070, origin_lng: 31.6387, destination_lat: 30.0712, destination_lng: 31.0167,
+          price: 35, estimated_duration_minutes: 60, status: 'active',
+          description_en: 'Madinaty to Smart Village', description_ar: 'مدينتي إلى القرية الذكية',
+        },
+        {
+          name_en: 'Nasr City - Downtown', name_ar: 'مدينة نصر - وسط البلد',
+          origin_name_en: 'City Stars', origin_name_ar: 'سيتي ستارز',
+          destination_name_en: 'Tahrir Square', destination_name_ar: 'ميدان التحرير',
+          origin_lat: 30.0731, origin_lng: 31.3455, destination_lat: 30.0444, destination_lng: 31.2357,
+          price: 20, estimated_duration_minutes: 35, status: 'active',
+          description_en: 'Nasr City to Downtown Cairo', description_ar: 'مدينة نصر إلى وسط البلد',
+        },
+        {
+          name_en: '6th October - Mohandessin', name_ar: '6 أكتوبر - المهندسين',
+          origin_name_en: 'Mall of Arabia', origin_name_ar: 'مول العرب',
+          destination_name_en: 'Mohandessin', destination_name_ar: 'المهندسين',
+          origin_lat: 29.9726, origin_lng: 30.9461, destination_lat: 30.0561, destination_lng: 31.2001,
+          price: 25, estimated_duration_minutes: 45, status: 'active',
+          description_en: '6th October to Mohandessin', description_ar: '6 أكتوبر إلى المهندسين',
+        },
+      ];
+
+      const { data: insertedRoutes, error: routeErr } = await supabase.from('routes').insert(testRoutes).select();
+      if (routeErr) throw routeErr;
+
+      // 2. Create test shuttles
+      const testShuttles = [
+        { vehicle_model: 'Toyota HiAce 2024', vehicle_plate: 'ق ب ج 1234', capacity: 14, status: 'active' },
+        { vehicle_model: 'Mercedes Sprinter 2023', vehicle_plate: 'أ ب ت 5678', capacity: 16, status: 'active' },
+        { vehicle_model: 'Ford Transit 2024', vehicle_plate: 'م ن و 9012', capacity: 12, status: 'active' },
+      ];
+
+      const { data: insertedShuttles, error: shuttleErr } = await supabase.from('shuttles').insert(testShuttles).select();
+      if (shuttleErr) throw shuttleErr;
+
+      // 3. Assign routes to shuttles
+      if (insertedRoutes && insertedShuttles) {
+        for (let i = 0; i < Math.min(insertedRoutes.length, insertedShuttles.length); i++) {
+          await supabase.from('shuttles').update({ route_id: insertedRoutes[i].id }).eq('id', insertedShuttles[i].id);
+        }
+
+        // 4. Create ride instances for the next 2 weeks
+        const rideInstances: any[] = [];
+        const today = new Date();
+        for (let i = 0; i < 14; i++) {
+          const date = new Date(today);
+          date.setDate(today.getDate() + i);
+          const dayOfWeek = date.getDay();
+          // Skip Friday (5)
+          if (dayOfWeek === 5) continue;
+          const dateStr = date.toISOString().split('T')[0];
+
+          for (let j = 0; j < insertedRoutes.length; j++) {
+            const shuttle = insertedShuttles[j % insertedShuttles.length];
+            // Morning ride
+            rideInstances.push({
+              route_id: insertedRoutes[j].id,
+              shuttle_id: shuttle.id,
+              driver_id: user!.id, // admin as placeholder driver
+              ride_date: dateStr,
+              departure_time: '08:00',
+              available_seats: shuttle.capacity,
+              total_seats: shuttle.capacity,
+              status: 'scheduled',
+            });
+            // Evening ride
+            rideInstances.push({
+              route_id: insertedRoutes[j].id,
+              shuttle_id: shuttle.id,
+              driver_id: user!.id,
+              ride_date: dateStr,
+              departure_time: '17:00',
+              available_seats: shuttle.capacity,
+              total_seats: shuttle.capacity,
+              status: 'scheduled',
+            });
+          }
+        }
+
+        const { error: rideErr } = await supabase.from('ride_instances').upsert(rideInstances, { onConflict: 'shuttle_id,ride_date,departure_time' });
+        if (rideErr) throw rideErr;
+      }
+
+      toast.success(lang === 'ar' ? 'تم إضافة البيانات التجريبية!' : 'Test data seeded successfully!');
+      fetchAllData();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to seed data');
+    }
+  };
+
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
   }
