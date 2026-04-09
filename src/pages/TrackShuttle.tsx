@@ -111,12 +111,13 @@ const TrackShuttle = () => {
 
       // Fetch driver profile
       if (bookingData.shuttles?.driver_id) {
-        const { data: driverProfile } = await supabase
-          .from('profiles')
-          .select('full_name, avatar_url, phone')
-          .eq('user_id', bookingData.shuttles.driver_id)
-          .single();
-        setDriver(driverProfile);
+        const driverId = bookingData.shuttles.driver_id;
+        const [profileRes, appRes] = await Promise.all([
+          supabase.from('profiles').select('full_name, avatar_url, phone').eq('user_id', driverId).single(),
+          supabase.from('driver_applications').select('license_number, vehicle_model, vehicle_year, phone').eq('user_id', driverId).eq('status', 'approved').single(),
+        ]);
+        setDriver(profileRes.data);
+        setDriverApplication(appRes.data);
       }
 
       // Fetch all bookings on same shuttle+date+time for ordering
