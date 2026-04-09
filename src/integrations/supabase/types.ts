@@ -28,6 +28,7 @@ export type Database = {
           dropoff_stop_id: string | null
           dropped_off_at: string | null
           id: string
+          payment_proof_url: string | null
           pickup_stop_id: string | null
           route_id: string | null
           scheduled_date: string
@@ -38,6 +39,7 @@ export type Database = {
           total_price: number
           updated_at: string
           user_id: string
+          waitlist_position: number | null
         }
         Insert: {
           boarded_at?: string | null
@@ -52,6 +54,7 @@ export type Database = {
           dropoff_stop_id?: string | null
           dropped_off_at?: string | null
           id?: string
+          payment_proof_url?: string | null
           pickup_stop_id?: string | null
           route_id?: string | null
           scheduled_date: string
@@ -62,6 +65,7 @@ export type Database = {
           total_price?: number
           updated_at?: string
           user_id: string
+          waitlist_position?: number | null
         }
         Update: {
           boarded_at?: string | null
@@ -76,6 +80,7 @@ export type Database = {
           dropoff_stop_id?: string | null
           dropped_off_at?: string | null
           id?: string
+          payment_proof_url?: string | null
           pickup_stop_id?: string | null
           route_id?: string | null
           scheduled_date?: string
@@ -86,6 +91,7 @@ export type Database = {
           total_price?: number
           updated_at?: string
           user_id?: string
+          waitlist_position?: number | null
         }
         Relationships: [
           {
