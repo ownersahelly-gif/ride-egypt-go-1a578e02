@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, ArrowLeft } from 'lucide-react';
@@ -13,10 +14,12 @@ const CTASection = () => {
           <div className="absolute top-0 right-0 w-64 h-64 rounded-full bg-secondary/10 blur-3xl -translate-y-1/2 translate-x-1/2" />
           <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4 relative z-10">{t('cta.title')}</h2>
           <p className="text-muted-foreground text-lg mb-8 relative z-10">{t('cta.subtitle')}</p>
-          <Button size="lg" className="text-base px-8 py-6 gap-2 rounded-xl relative z-10">
-            {t('cta.button')}
-            <Arrow className="w-5 h-5" />
-          </Button>
+          <Link to="/signup" className="relative z-10">
+            <Button size="lg" className="text-base px-8 py-6 gap-2 rounded-xl">
+              {t('cta.button')}
+              <Arrow className="w-5 h-5" />
+            </Button>
+          </Link>
         </div>
       </div>
     </section>

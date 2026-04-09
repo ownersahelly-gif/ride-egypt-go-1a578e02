@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { CheckCircle2, Zap, UserCheck } from 'lucide-react';
@@ -30,9 +31,11 @@ const DriversSection = () => {
             ))}
           </div>
 
-          <Button size="lg" variant="secondary" className="text-base px-8 py-6 rounded-xl font-semibold">
-            {t('drivers.cta')}
-          </Button>
+          <Link to="/driver-apply">
+            <Button size="lg" variant="secondary" className="text-base px-8 py-6 rounded-xl font-semibold">
+              {t('drivers.cta')}
+            </Button>
+          </Link>
         </div>
       </div>
     </section>

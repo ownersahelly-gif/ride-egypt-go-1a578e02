@@ -14,16 +14,464 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bookings: {
+        Row: {
+          created_at: string
+          dropoff_stop_id: string | null
+          id: string
+          pickup_stop_id: string | null
+          route_id: string | null
+          scheduled_date: string
+          scheduled_time: string
+          seats: number
+          shuttle_id: string | null
+          status: string
+          total_price: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          dropoff_stop_id?: string | null
+          id?: string
+          pickup_stop_id?: string | null
+          route_id?: string | null
+          scheduled_date: string
+          scheduled_time: string
+          seats?: number
+          shuttle_id?: string | null
+          status?: string
+          total_price?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          dropoff_stop_id?: string | null
+          id?: string
+          pickup_stop_id?: string | null
+          route_id?: string | null
+          scheduled_date?: string
+          scheduled_time?: string
+          seats?: number
+          shuttle_id?: string | null
+          status?: string
+          total_price?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bookings_dropoff_stop_id_fkey"
+            columns: ["dropoff_stop_id"]
+            isOneToOne: false
+            referencedRelation: "stops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_pickup_stop_id_fkey"
+            columns: ["pickup_stop_id"]
+            isOneToOne: false
+            referencedRelation: "stops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "routes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_shuttle_id_fkey"
+            columns: ["shuttle_id"]
+            isOneToOne: false
+            referencedRelation: "shuttles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      driver_applications: {
+        Row: {
+          created_at: string
+          experience_years: number
+          id: string
+          license_number: string
+          notes: string | null
+          status: string
+          updated_at: string
+          user_id: string
+          vehicle_model: string
+          vehicle_plate: string
+          vehicle_year: number
+        }
+        Insert: {
+          created_at?: string
+          experience_years?: number
+          id?: string
+          license_number: string
+          notes?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+          vehicle_model: string
+          vehicle_plate: string
+          vehicle_year: number
+        }
+        Update: {
+          created_at?: string
+          experience_years?: number
+          id?: string
+          license_number?: string
+          notes?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+          vehicle_model?: string
+          vehicle_plate?: string
+          vehicle_year?: number
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          full_name: string | null
+          id: string
+          phone: string | null
+          updated_at: string
+          user_id: string
+          user_type: Database["public"]["Enums"]["user_type"]
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          phone?: string | null
+          updated_at?: string
+          user_id: string
+          user_type?: Database["public"]["Enums"]["user_type"]
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          phone?: string | null
+          updated_at?: string
+          user_id?: string
+          user_type?: Database["public"]["Enums"]["user_type"]
+        }
+        Relationships: []
+      }
+      ratings: {
+        Row: {
+          booking_id: string
+          comment: string | null
+          created_at: string
+          driver_id: string | null
+          id: string
+          rating: number
+          user_id: string
+        }
+        Insert: {
+          booking_id: string
+          comment?: string | null
+          created_at?: string
+          driver_id?: string | null
+          id?: string
+          rating: number
+          user_id: string
+        }
+        Update: {
+          booking_id?: string
+          comment?: string | null
+          created_at?: string
+          driver_id?: string | null
+          id?: string
+          rating?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ratings_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      route_requests: {
+        Row: {
+          created_at: string
+          destination_lat: number
+          destination_lng: number
+          destination_name: string
+          id: string
+          origin_lat: number
+          origin_lng: number
+          origin_name: string
+          preferred_time: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          destination_lat: number
+          destination_lng: number
+          destination_name: string
+          id?: string
+          origin_lat: number
+          origin_lng: number
+          origin_name: string
+          preferred_time?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          destination_lat?: number
+          destination_lng?: number
+          destination_name?: string
+          id?: string
+          origin_lat?: number
+          origin_lng?: number
+          origin_name?: string
+          preferred_time?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      routes: {
+        Row: {
+          created_at: string
+          description_ar: string | null
+          description_en: string | null
+          destination_lat: number
+          destination_lng: number
+          destination_name_ar: string
+          destination_name_en: string
+          estimated_duration_minutes: number
+          id: string
+          name_ar: string
+          name_en: string
+          origin_lat: number
+          origin_lng: number
+          origin_name_ar: string
+          origin_name_en: string
+          price: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description_ar?: string | null
+          description_en?: string | null
+          destination_lat: number
+          destination_lng: number
+          destination_name_ar: string
+          destination_name_en: string
+          estimated_duration_minutes?: number
+          id?: string
+          name_ar: string
+          name_en: string
+          origin_lat: number
+          origin_lng: number
+          origin_name_ar: string
+          origin_name_en: string
+          price?: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description_ar?: string | null
+          description_en?: string | null
+          destination_lat?: number
+          destination_lng?: number
+          destination_name_ar?: string
+          destination_name_en?: string
+          estimated_duration_minutes?: number
+          id?: string
+          name_ar?: string
+          name_en?: string
+          origin_lat?: number
+          origin_lng?: number
+          origin_name_ar?: string
+          origin_name_en?: string
+          price?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      shuttle_schedules: {
+        Row: {
+          arrival_time: string
+          created_at: string
+          day_of_week: number
+          departure_time: string
+          id: string
+          shuttle_id: string
+        }
+        Insert: {
+          arrival_time: string
+          created_at?: string
+          day_of_week: number
+          departure_time: string
+          id?: string
+          shuttle_id: string
+        }
+        Update: {
+          arrival_time?: string
+          created_at?: string
+          day_of_week?: number
+          departure_time?: string
+          id?: string
+          shuttle_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shuttle_schedules_shuttle_id_fkey"
+            columns: ["shuttle_id"]
+            isOneToOne: false
+            referencedRelation: "shuttles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shuttles: {
+        Row: {
+          capacity: number
+          created_at: string
+          current_lat: number | null
+          current_lng: number | null
+          driver_id: string | null
+          id: string
+          route_id: string | null
+          status: string
+          updated_at: string
+          vehicle_model: string
+          vehicle_plate: string
+        }
+        Insert: {
+          capacity?: number
+          created_at?: string
+          current_lat?: number | null
+          current_lng?: number | null
+          driver_id?: string | null
+          id?: string
+          route_id?: string | null
+          status?: string
+          updated_at?: string
+          vehicle_model: string
+          vehicle_plate: string
+        }
+        Update: {
+          capacity?: number
+          created_at?: string
+          current_lat?: number | null
+          current_lng?: number | null
+          driver_id?: string | null
+          id?: string
+          route_id?: string | null
+          status?: string
+          updated_at?: string
+          vehicle_model?: string
+          vehicle_plate?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shuttles_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "routes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stops: {
+        Row: {
+          created_at: string
+          id: string
+          lat: number
+          lng: number
+          name_ar: string
+          name_en: string
+          route_id: string
+          stop_order: number
+          stop_type: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lat: number
+          lng: number
+          name_ar: string
+          name_en: string
+          route_id: string
+          stop_order?: number
+          stop_type?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lat?: number
+          lng?: number
+          name_ar?: string
+          name_en?: string
+          route_id?: string
+          stop_order?: number
+          stop_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stops_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "routes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "moderator" | "user"
+      user_type: "customer" | "driver" | "admin"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +598,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "moderator", "user"],
+      user_type: ["customer", "driver", "admin"],
+    },
   },
 } as const
