@@ -51,8 +51,11 @@ const ActiveRide = () => {
         .eq('scheduled_date', today)
         .in('status', ['confirmed', 'boarded']);
 
-      const bks = bookingsData || [];
-      setBookings(bks);
+      const bks = (bookingsData || []).sort((a: any, b: any) => {
+        const orderA = a.stops?.stop_order ?? 999;
+        const orderB = b.stops?.stop_order ?? 999;
+        return orderA - orderB;
+      });
 
       // Determine phase
       const allBoarded = bks.length > 0 && bks.every(b => b.status === 'boarded' || b.boarded_at);
