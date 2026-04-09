@@ -4,8 +4,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { MapPin, Clock, Ticket, ChevronLeft, ChevronRight } from 'lucide-react';
+import { MapPin, Clock, Ticket, ChevronLeft, ChevronRight, MessageCircle, Navigation, Key } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import RideChat from '@/components/RideChat';
 
 const MyBookings = () => {
   const { user } = useAuth();
@@ -14,6 +15,7 @@ const MyBookings = () => {
   const Back = lang === 'ar' ? ChevronRight : ChevronLeft;
   const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [chatBookingId, setChatBookingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -32,6 +34,7 @@ const MyBookings = () => {
   const statusColors: Record<string, string> = {
     pending: 'bg-secondary/20 text-secondary',
     confirmed: 'bg-green-100 text-green-700',
+    boarded: 'bg-primary/10 text-primary',
     completed: 'bg-muted text-muted-foreground',
     cancelled: 'bg-destructive/10 text-destructive',
   };
@@ -61,7 +64,9 @@ const MyBookings = () => {
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-semibold text-foreground">{lang === 'ar' ? booking.routes?.name_ar : booking.routes?.name_en}</h3>
                   <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusColors[booking.status] || ''}`}>
-                    {t(`booking.status.${booking.status}`)}
+                    {booking.status === 'boarded' 
+                      ? (lang === 'ar' ? 'في الشاتل' : 'On Board')
+                      : t(`booking.status.${booking.status}`)}
                   </span>
                 </div>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
@@ -69,17 +74,56 @@ const MyBookings = () => {
                   <span>{booking.scheduled_time}</span>
                   <span>{booking.seats} {t('booking.seat')}</span>
                 </div>
+
+                {/* Boarding code - shown for confirmed/boarded bookings */}
+                {booking.boarding_code && ['confirmed', 'pending'].includes(booking.status) && (
+                  <div className="bg-surface rounded-lg p-3 mb-3 flex items-center gap-3">
+                    <Key className="w-5 h-5 text-primary" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'رمز الصعود' : 'Boarding Code'}</p>
+                      <p className="text-xl font-mono font-bold text-foreground tracking-widest">{booking.boarding_code}</p>
+                    </div>
+                    <p className="text-xs text-muted-foreground ms-auto max-w-[120px] text-end">
+                      {lang === 'ar' ? 'أظهر هذا الرمز للسائق' : 'Show this to your driver'}
+                    </p>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-primary">{booking.total_price} EGP</span>
-                  {booking.status === 'pending' && (
-                    <Button variant="destructive" size="sm" onClick={() => cancelBooking(booking.id)}>{t('booking.cancel')}</Button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {/* Chat button for active bookings */}
+                    {['confirmed', 'boarded'].includes(booking.status) && (
+                      <Button variant="outline" size="sm" onClick={() => setChatBookingId(booking.id)}>
+                        <MessageCircle className="w-3.5 h-3.5 me-1" />
+                        {lang === 'ar' ? 'محادثة' : 'Chat'}
+                      </Button>
+                    )}
+                    {/* Track button */}
+                    {['confirmed', 'boarded'].includes(booking.status) && (
+                      <Link to={`/track?booking=${booking.id}`}>
+                        <Button variant="outline" size="sm">
+                          <Navigation className="w-3.5 h-3.5 me-1" />
+                          {lang === 'ar' ? 'تتبع' : 'Track'}
+                        </Button>
+                      </Link>
+                    )}
+                    {booking.status === 'pending' && (
+                      <Button variant="destructive" size="sm" onClick={() => cancelBooking(booking.id)}>{t('booking.cancel')}</Button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         )}
       </main>
+
+      <RideChat
+        bookingId={chatBookingId || ''}
+        isOpen={!!chatBookingId}
+        onClose={() => setChatBookingId(null)}
+      />
     </div>
   );
 };

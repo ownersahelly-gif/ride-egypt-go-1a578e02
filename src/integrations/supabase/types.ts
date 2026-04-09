@@ -16,8 +16,11 @@ export type Database = {
     Tables: {
       bookings: {
         Row: {
+          boarded_at: string | null
+          boarding_code: string | null
           created_at: string
           dropoff_stop_id: string | null
+          dropped_off_at: string | null
           id: string
           pickup_stop_id: string | null
           route_id: string | null
@@ -31,8 +34,11 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          boarded_at?: string | null
+          boarding_code?: string | null
           created_at?: string
           dropoff_stop_id?: string | null
+          dropped_off_at?: string | null
           id?: string
           pickup_stop_id?: string | null
           route_id?: string | null
@@ -46,8 +52,11 @@ export type Database = {
           user_id: string
         }
         Update: {
+          boarded_at?: string | null
+          boarding_code?: string | null
           created_at?: string
           dropoff_stop_id?: string | null
+          dropped_off_at?: string | null
           id?: string
           pickup_stop_id?: string | null
           route_id?: string | null
@@ -197,6 +206,38 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "ratings_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ride_messages: {
+        Row: {
+          booking_id: string
+          created_at: string
+          id: string
+          message: string
+          sender_id: string
+        }
+        Insert: {
+          booking_id: string
+          created_at?: string
+          id?: string
+          message: string
+          sender_id: string
+        }
+        Update: {
+          booking_id?: string
+          created_at?: string
+          id?: string
+          message?: string
+          sender_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ride_messages_booking_id_fkey"
             columns: ["booking_id"]
             isOneToOne: false
             referencedRelation: "bookings"
