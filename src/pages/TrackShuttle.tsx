@@ -343,6 +343,13 @@ const TrackShuttle = () => {
             }}>
               <Share2 className="w-4 h-4" />
             </Button>
+            {(driverApplication?.phone || driver?.phone) && (
+              <a href={`tel:${driverApplication?.phone || driver?.phone}`}>
+                <Button variant="ghost" size="icon" title={lang === 'ar' ? 'اتصل بالسائق' : 'Call Driver'}>
+                  <Phone className="w-4 h-4" />
+                </Button>
+              </a>
+            )}
             <Button variant="ghost" size="icon" onClick={() => setChatOpen(true)}>
               <MessageCircle className="w-4 h-4" />
             </Button>
@@ -474,6 +481,12 @@ const TrackShuttle = () => {
                       <div className="flex items-center gap-2 text-xs text-muted-foreground ps-[52px]">
                         <Shield className="w-3 h-3" />
                         <span>{lang === 'ar' ? 'رخصة:' : 'License:'} {driverApplication.license_number}</span>
+                      </div>
+                    )}
+                    {driverRating && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground ps-[52px]">
+                        <Star className="w-3 h-3 fill-secondary text-secondary" />
+                        <span>{driverRating.avg} ({driverRating.count} {lang === 'ar' ? 'تقييم' : 'ratings'})</span>
                       </div>
                     )}
                   </div>
