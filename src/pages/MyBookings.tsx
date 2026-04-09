@@ -1,13 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { MapPin, Clock, Ticket, ChevronLeft, ChevronRight, MessageCircle, Navigation, Key, Star, Share2, Phone, Users } from 'lucide-react';
+import { MapPin, Clock, Ticket, ChevronLeft, ChevronRight, MessageCircle, Navigation, Key, Star, Phone, Users, Timer } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import RideChat from '@/components/RideChat';
 import RideRating from '@/components/RideRating';
+
+/** Haversine distance in km */
+const haversineKm = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const x =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+};
 
 const MyBookings = () => {
   const { user } = useAuth();
@@ -20,6 +32,8 @@ const MyBookings = () => {
   const [ratingBooking, setRatingBooking] = useState<any>(null);
   const [ratedBookingIds, setRatedBookingIds] = useState<Set<string>>(new Set());
   const [driverProfiles, setDriverProfiles] = useState<Record<string, any>>({});
+  // All bookings on same shuttle+date for ETA calculation
+  const [peerBookings, setPeerBookings] = useState<Record<string, any[]>>({});
 
   useEffect(() => {
     if (!user) return;
@@ -41,6 +55,28 @@ const MyBookings = () => {
         setDriverProfiles(map);
       }
 
+      // Fetch peer bookings for confirmed rides (to count stops before you)
+      const confirmedBookings = (bookingsData || []).filter((b: any) => ['confirmed', 'boarded'].includes(b.status));
+      if (confirmedBookings.length > 0) {
+        const peerMap: Record<string, any[]> = {};
+        for (const b of confirmedBookings) {
+          if (!b.shuttle_id) continue;
+          const key = `${b.shuttle_id}_${b.scheduled_date}_${b.scheduled_time}`;
+          if (!peerMap[key]) {
+            const { data } = await supabase
+              .from('bookings')
+              .select('user_id, custom_pickup_lat, custom_pickup_lng, status')
+              .eq('shuttle_id', b.shuttle_id)
+              .eq('scheduled_date', b.scheduled_date)
+              .eq('scheduled_time', b.scheduled_time)
+              .in('status', ['confirmed', 'boarded', 'pending'])
+              .neq('user_id', user.id);
+            peerMap[key] = data || [];
+          }
+        }
+        setPeerBookings(peerMap);
+      }
+
       setLoading(false);
     };
     fetchBookings();
@@ -51,6 +87,62 @@ const MyBookings = () => {
     if (error) { toast({ title: t('auth.error'), description: error.message, variant: 'destructive' }); return; }
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'cancelled' } : b));
     toast({ title: t('booking.cancelled') });
+  };
+
+  /** Calculate simple ETA for a booking */
+  const getEtaInfo = (booking: any) => {
+    if (!['confirmed', 'boarded'].includes(booking.status)) return null;
+    const shuttle = booking.shuttles;
+    const route = booking.routes;
+    if (!shuttle || !route) return null;
+
+    // If shuttle has no live location, calculate from route origin
+    const shuttleLoc = (shuttle.current_lat && shuttle.current_lng)
+      ? { lat: shuttle.current_lat, lng: shuttle.current_lng }
+      : null;
+
+    if (!shuttleLoc) return null; // Can't calculate without shuttle location
+
+    const myPickup = {
+      lat: booking.custom_pickup_lat ?? route.origin_lat,
+      lng: booking.custom_pickup_lng ?? route.origin_lng,
+    };
+
+    // Distance from shuttle to my pickup
+    const distKm = haversineKm(shuttleLoc, myPickup);
+    // Assume average speed 30km/h in Cairo traffic
+    let etaMin = Math.ceil((distKm / 30) * 60);
+
+    // Count stops before me
+    const key = `${booking.shuttle_id}_${booking.scheduled_date}_${booking.scheduled_time}`;
+    const peers = peerBookings[key] || [];
+
+    // Route progress projection
+    const routeOrigin = { lat: route.origin_lat, lng: route.origin_lng };
+    const routeDest = { lat: route.destination_lat, lng: route.destination_lng };
+    const calcProgress = (point: { lat: number; lng: number }) => {
+      const dx = point.lat - routeOrigin.lat;
+      const dy = point.lng - routeOrigin.lng;
+      const rx = routeDest.lat - routeOrigin.lat;
+      const ry = routeDest.lng - routeOrigin.lng;
+      const len = Math.sqrt(rx * rx + ry * ry);
+      return len === 0 ? 0 : (dx * rx + dy * ry) / (len * len);
+    };
+
+    const myProgress = calcProgress(myPickup);
+    const stopsBefore = peers.filter(p => {
+      if (p.status === 'boarded') return false;
+      const pPickup = {
+        lat: p.custom_pickup_lat ?? route.origin_lat,
+        lng: p.custom_pickup_lng ?? route.origin_lng,
+      };
+      return calcProgress(pPickup) < myProgress;
+    }).length;
+
+    // Add ~1 min per stop for boarding
+    etaMin += stopsBefore;
+
+    return { etaMin, stopsBefore };
   };
 
   const statusColors: Record<string, string> = {
@@ -81,64 +173,90 @@ const MyBookings = () => {
           </div>
         ) : (
           <div className="space-y-3">
-            {bookings.map((booking) => (
-              <div key={booking.id} className="bg-card border border-border rounded-xl p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-foreground">{lang === 'ar' ? booking.routes?.name_ar : booking.routes?.name_en}</h3>
-                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusColors[booking.status] || ''}`}>
-                    {booking.status === 'boarded' 
-                      ? (lang === 'ar' ? 'في الشاتل' : 'On Board')
-                      : t(`booking.status.${booking.status}`)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
-                  <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{booking.scheduled_date}</span>
-                  <span>{booking.scheduled_time}</span>
-                  <span>{booking.seats} {t('booking.seat')}</span>
-                </div>
+            {bookings.map((booking) => {
+              const dp = driverProfiles[booking.shuttles?.driver_id];
+              const eta = getEtaInfo(booking);
 
-                {/* Boarding code */}
-                {booking.boarding_code && ['confirmed', 'pending'].includes(booking.status) && (
-                  <div className="bg-surface rounded-lg p-3 mb-3 flex items-center gap-3">
-                    <Key className="w-5 h-5 text-primary" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'رمز الصعود' : 'Boarding Code'}</p>
-                      <p className="text-xl font-mono font-bold text-foreground tracking-widest">{booking.boarding_code}</p>
+              return (
+                <div key={booking.id} className="bg-card border border-border rounded-xl p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-foreground">{lang === 'ar' ? booking.routes?.name_ar : booking.routes?.name_en}</h3>
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusColors[booking.status] || ''}`}>
+                      {booking.status === 'boarded' 
+                        ? (lang === 'ar' ? 'في الشاتل' : 'On Board')
+                        : t(`booking.status.${booking.status}`)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
+                    <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{booking.scheduled_date}</span>
+                    <span>{booking.scheduled_time}</span>
+                    <span>{booking.seats} {t('booking.seat')}</span>
+                  </div>
+
+                  {/* ETA Banner for active rides */}
+                  {eta && !booking.status.includes('boarded') && (
+                    <div className="bg-primary/10 rounded-lg p-3 mb-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Timer className="w-4 h-4 text-primary" />
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">
+                            ~{eta.etaMin} {lang === 'ar' ? 'دقيقة' : 'min'}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {lang === 'ar' ? 'الوقت المتوقع للوصول' : 'Estimated arrival'}
+                          </p>
+                        </div>
+                      </div>
+                      {eta.stopsBefore > 0 && (
+                        <div className="text-center bg-card rounded-lg px-3 py-1.5">
+                          <p className="text-sm font-bold text-primary">{eta.stopsBefore}</p>
+                          <p className="text-[10px] text-muted-foreground leading-tight">
+                            {lang === 'ar' ? 'توقفات قبلك' : 'stops before you'}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                    <p className="text-xs text-muted-foreground ms-auto max-w-[120px] text-end">
-                      {lang === 'ar' ? 'أظهر هذا الرمز للسائق' : 'Show this to your driver'}
-                    </p>
-                  </div>
-                )}
+                  )}
 
-                {/* Rating prompt for completed rides */}
-                {booking.status === 'completed' && !ratedBookingIds.has(booking.id) && (
-                  <div className="bg-secondary/10 rounded-lg p-3 mb-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Star className="w-4 h-4 text-secondary" />
-                      <span className="text-sm font-medium text-foreground">
-                        {lang === 'ar' ? 'كيف كانت رحلتك؟' : 'How was your ride?'}
-                      </span>
+                  {/* Boarding code */}
+                  {booking.boarding_code && ['confirmed', 'pending'].includes(booking.status) && (
+                    <div className="bg-surface rounded-lg p-3 mb-3 flex items-center gap-3">
+                      <Key className="w-5 h-5 text-primary" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'رمز الصعود' : 'Boarding Code'}</p>
+                        <p className="text-xl font-mono font-bold text-foreground tracking-widest">{booking.boarding_code}</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground ms-auto max-w-[120px] text-end">
+                        {lang === 'ar' ? 'أظهر هذا الرمز للسائق' : 'Show this to your driver'}
+                      </p>
                     </div>
-                    <Button size="sm" variant="secondary" onClick={() => setRatingBooking(booking)}>
-                      {lang === 'ar' ? 'قيّم الآن' : 'Rate Now'}
-                    </Button>
-                  </div>
-                )}
+                  )}
 
-                {/* Rated indicator */}
-                {booking.status === 'completed' && ratedBookingIds.has(booking.id) && (
-                  <div className="flex items-center gap-1 mb-3 text-xs text-muted-foreground">
-                    <Star className="w-3 h-3 fill-secondary text-secondary" />
-                    {lang === 'ar' ? 'تم التقييم' : 'Rated'}
-                  </div>
-                )}
+                  {/* Rating prompt for completed rides */}
+                  {booking.status === 'completed' && !ratedBookingIds.has(booking.id) && (
+                    <div className="bg-secondary/10 rounded-lg p-3 mb-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Star className="w-4 h-4 text-secondary" />
+                        <span className="text-sm font-medium text-foreground">
+                          {lang === 'ar' ? 'كيف كانت رحلتك؟' : 'How was your ride?'}
+                        </span>
+                      </div>
+                      <Button size="sm" variant="secondary" onClick={() => setRatingBooking(booking)}>
+                        {lang === 'ar' ? 'قيّم الآن' : 'Rate Now'}
+                      </Button>
+                    </div>
+                  )}
 
-                {/* Driver info */}
-                {(() => {
-                  const dp = driverProfiles[booking.shuttles?.driver_id];
-                  if (!dp) return null;
-                  return (
+                  {/* Rated indicator */}
+                  {booking.status === 'completed' && ratedBookingIds.has(booking.id) && (
+                    <div className="flex items-center gap-1 mb-3 text-xs text-muted-foreground">
+                      <Star className="w-3 h-3 fill-secondary text-secondary" />
+                      {lang === 'ar' ? 'تم التقييم' : 'Rated'}
+                    </div>
+                  )}
+
+                  {/* Driver info */}
+                  {dp && (
                     <div className="flex items-center gap-2 mb-3 bg-surface rounded-lg p-3 text-sm">
                       <Users className="w-4 h-4 text-primary shrink-0" />
                       <div className="flex-1 min-w-0">
@@ -155,33 +273,41 @@ const MyBookings = () => {
                         </a>
                       )}
                     </div>
-                  );
-                })()}
+                  )}
 
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-primary">{booking.total_price} EGP</span>
-                  <div className="flex items-center gap-2">
-                    {['confirmed', 'boarded'].includes(booking.status) && (
-                      <Button variant="outline" size="sm" onClick={() => setChatBookingId(booking.id)}>
-                        <MessageCircle className="w-3.5 h-3.5 me-1" />
-                        {lang === 'ar' ? 'محادثة' : 'Chat'}
-                      </Button>
-                    )}
-                    {['confirmed', 'boarded'].includes(booking.status) && (
-                      <Link to={`/track?booking=${booking.id}`}>
-                        <Button variant="outline" size="sm">
-                          <Navigation className="w-3.5 h-3.5 me-1" />
-                          {lang === 'ar' ? 'تتبع' : 'Track'}
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-primary">{booking.total_price} EGP</span>
+                    <div className="flex items-center gap-2">
+                      {['confirmed', 'boarded'].includes(booking.status) && dp?.phone && (
+                        <a href={`tel:${dp.phone}`}>
+                          <Button variant="outline" size="sm">
+                            <Phone className="w-3.5 h-3.5 me-1" />
+                            {lang === 'ar' ? 'اتصل' : 'Call'}
+                          </Button>
+                        </a>
+                      )}
+                      {['confirmed', 'boarded'].includes(booking.status) && (
+                        <Button variant="outline" size="sm" onClick={() => setChatBookingId(booking.id)}>
+                          <MessageCircle className="w-3.5 h-3.5 me-1" />
+                          {lang === 'ar' ? 'محادثة' : 'Chat'}
                         </Button>
-                      </Link>
-                    )}
-                    {booking.status === 'pending' && (
-                      <Button variant="destructive" size="sm" onClick={() => cancelBooking(booking.id)}>{t('booking.cancel')}</Button>
-                    )}
+                      )}
+                      {['confirmed', 'boarded'].includes(booking.status) && (
+                        <Link to={`/track?booking=${booking.id}`}>
+                          <Button variant="outline" size="sm">
+                            <Navigation className="w-3.5 h-3.5 me-1" />
+                            {lang === 'ar' ? 'تتبع' : 'Track'}
+                          </Button>
+                        </Link>
+                      )}
+                      {booking.status === 'pending' && (
+                        <Button variant="destructive" size="sm" onClick={() => cancelBooking(booking.id)}>{t('booking.cancel')}</Button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>
