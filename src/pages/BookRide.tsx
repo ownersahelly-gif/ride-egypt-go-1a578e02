@@ -7,7 +7,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { MapPin, Clock, Users, ArrowRight, Search, Ticket, ChevronLeft, ChevronRight, Calendar, AlertCircle } from 'lucide-react';
+import MapView from '@/components/MapView';
+import {
+  MapPin, Clock, Users, ArrowRight, Search, ChevronLeft, ChevronRight,
+  Calendar, AlertCircle, Car, User as UserIcon
+} from 'lucide-react';
 
 const BookRide = () => {
   const { user } = useAuth();
@@ -16,13 +20,9 @@ const BookRide = () => {
   const { toast } = useToast();
   const Back = lang === 'ar' ? ChevronRight : ChevronLeft;
 
-  const [routes, setRoutes] = useState<any[]>([]);
-  const [stops, setStops] = useState<Record<string, any[]>>({});
   const [search, setSearch] = useState('');
-  const [selectedRoute, setSelectedRoute] = useState<any>(null);
   const [selectedPickup, setSelectedPickup] = useState('');
   const [selectedDropoff, setSelectedDropoff] = useState('');
-  const [seats, setSeats] = useState(1);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<'browse' | 'details'>('browse');
 
@@ -31,15 +31,16 @@ const BookRide = () => {
   const [rideInstances, setRideInstances] = useState<any[]>([]);
   const [loadingRides, setLoadingRides] = useState(false);
   const [selectedRide, setSelectedRide] = useState<any>(null);
+  const [stops, setStops] = useState<any[]>([]);
+  const [driverProfile, setDriverProfile] = useState<any>(null);
+  const [shuttleInfo, setShuttleInfo] = useState<any>(null);
 
-  // Quick date buttons
   const getDateOptions = () => {
     const options: { label: string; date: string }[] = [];
     const today = new Date();
     const dayNames = lang === 'ar'
       ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
       : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
     for (let i = 0; i < 7; i++) {
       const d = new Date(today);
       d.setDate(today.getDate() + i);
@@ -54,12 +55,6 @@ const BookRide = () => {
   };
 
   useEffect(() => {
-    supabase.from('routes').select('*').eq('status', 'active').then(({ data }) => {
-      setRoutes(data || []);
-    });
-  }, []);
-
-  useEffect(() => {
     fetchRideInstances(selectedDate);
   }, [selectedDate]);
 
@@ -67,34 +62,50 @@ const BookRide = () => {
     setLoadingRides(true);
     const { data } = await supabase
       .from('ride_instances')
-      .select('*, routes(name_en, name_ar, origin_name_en, origin_name_ar, destination_name_en, destination_name_ar, price, estimated_duration_minutes)')
+      .select('*, routes(name_en, name_ar, origin_name_en, origin_name_ar, destination_name_en, destination_name_ar, price, estimated_duration_minutes, origin_lat, origin_lng, destination_lat, destination_lng)')
       .eq('ride_date', date)
       .eq('status', 'scheduled')
       .order('departure_time');
-    setRideInstances(data || []);
+
+    if (data && data.length > 0) {
+      // Fetch driver profiles and shuttle info for all rides
+      const driverIds = [...new Set(data.map(r => r.driver_id))];
+      const shuttleIds = [...new Set(data.map(r => r.shuttle_id))];
+
+      const [{ data: profiles }, { data: shuttles }] = await Promise.all([
+        supabase.from('profiles').select('user_id, full_name, avatar_url, phone').in('user_id', driverIds),
+        supabase.from('shuttles').select('id, vehicle_model, vehicle_plate, capacity').in('id', shuttleIds),
+      ]);
+
+      const profileMap: Record<string, any> = {};
+      (profiles || []).forEach(p => { profileMap[p.user_id] = p; });
+      const shuttleMap: Record<string, any> = {};
+      (shuttles || []).forEach(s => { shuttleMap[s.id] = s; });
+
+      const enriched = data.map(r => ({
+        ...r,
+        driver_profile: profileMap[r.driver_id] || null,
+        shuttle_info: shuttleMap[r.shuttle_id] || null,
+      }));
+      setRideInstances(enriched);
+    } else {
+      setRideInstances([]);
+    }
     setLoadingRides(false);
   };
 
-  const loadStops = async (routeId: string) => {
-    if (stops[routeId]) return;
-    const { data } = await supabase.from('stops').select('*').eq('route_id', routeId).order('stop_order');
-    setStops((prev) => ({ ...prev, [routeId]: data || [] }));
-  };
-
-  const selectRide = (ride: any) => {
+  const selectRide = async (ride: any) => {
     setSelectedRide(ride);
-    setSelectedRoute(ride.routes);
-    loadStops(ride.route_id);
+    setDriverProfile(ride.driver_profile);
+    setShuttleInfo(ride.shuttle_info);
+    // Load stops for this route
+    const { data } = await supabase.from('stops').select('*').eq('route_id', ride.route_id).order('stop_order');
+    setStops(data || []);
+    setSelectedPickup('');
+    setSelectedDropoff('');
     setStep('details');
   };
 
-  const filteredRoutes = routes.filter((r) => {
-    const q = search.toLowerCase();
-    return !q || r.name_en.toLowerCase().includes(q) || r.name_ar.includes(q) ||
-      r.origin_name_en.toLowerCase().includes(q) || r.destination_name_en.toLowerCase().includes(q);
-  });
-
-  // Filter ride instances by search
   const filteredRides = rideInstances.filter((ri) => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -104,11 +115,14 @@ const BookRide = () => {
 
   const handleBook = async () => {
     if (!user || !selectedRide) return;
+    if (!selectedPickup || !selectedDropoff) {
+      toast({ title: lang === 'ar' ? 'اختر المحطات' : 'Select stops', description: lang === 'ar' ? 'يرجى اختيار نقطة الركوب والنزول' : 'Please select pickup and dropoff stops', variant: 'destructive' });
+      return;
+    }
     setLoading(true);
     try {
-      // Check seat availability
-      if (selectedRide.available_seats < seats) {
-        toast({ title: lang === 'ar' ? 'المقاعد غير كافية' : 'Not enough seats', description: lang === 'ar' ? `متاح فقط ${selectedRide.available_seats} مقاعد` : `Only ${selectedRide.available_seats} seats available`, variant: 'destructive' });
+      if (selectedRide.available_seats < 1) {
+        toast({ title: lang === 'ar' ? 'لا توجد مقاعد' : 'No seats available', variant: 'destructive' });
         setLoading(false);
         return;
       }
@@ -117,19 +131,18 @@ const BookRide = () => {
         user_id: user.id,
         route_id: selectedRide.route_id,
         shuttle_id: selectedRide.shuttle_id,
-        pickup_stop_id: selectedPickup || null,
-        dropoff_stop_id: selectedDropoff || null,
-        seats,
-        total_price: (selectedRide.routes?.price || 0) * seats,
+        pickup_stop_id: selectedPickup,
+        dropoff_stop_id: selectedDropoff,
+        seats: 1,
+        total_price: selectedRide.routes?.price || 0,
         scheduled_date: selectedRide.ride_date,
         scheduled_time: selectedRide.departure_time,
         status: 'pending',
       });
       if (error) throw error;
 
-      // Update available seats
       await supabase.from('ride_instances').update({
-        available_seats: selectedRide.available_seats - seats,
+        available_seats: selectedRide.available_seats - 1,
       }).eq('id', selectedRide.id);
 
       toast({ title: t('booking.success'), description: t('booking.successDesc') });
@@ -141,8 +154,19 @@ const BookRide = () => {
     }
   };
 
-  const routeStops = selectedRide ? stops[selectedRide.route_id] || [] : [];
   const dateOptions = getDateOptions();
+  const pickupStops = stops.filter(s => s.stop_type !== 'dropoff');
+  const dropoffStops = stops.filter(s => s.stop_type !== 'pickup');
+
+  // Ensure dropoff is after pickup in stop_order
+  const selectedPickupOrder = stops.find(s => s.id === selectedPickup)?.stop_order ?? -1;
+  const validDropoffs = dropoffStops.filter(s => s.stop_order > selectedPickupOrder);
+
+  // Map markers for route details
+  const routeMarkers = stops.map(s => ({
+    lat: s.lat, lng: s.lng, label: s.stop_order.toString(),
+    color: (s.id === selectedPickup ? 'green' : s.id === selectedDropoff ? 'red' : undefined) as 'green' | 'red' | undefined,
+  }));
 
   return (
     <div className="min-h-screen bg-surface">
@@ -158,14 +182,12 @@ const BookRide = () => {
       <main className="container mx-auto px-4 py-6 max-w-2xl">
         {step === 'browse' && (
           <div className="space-y-4">
-            {/* Search */}
             <div className="relative">
               <Search className="absolute start-3 top-3 h-5 w-5 text-muted-foreground" />
               <Input placeholder={t('booking.searchPlaceholder')} className="ps-11 h-12 text-base rounded-xl"
                 value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
 
-            {/* Date picker */}
             <div>
               <Label className="text-sm font-medium text-foreground mb-2 block">
                 <Calendar className="w-4 h-4 inline me-1" />
@@ -183,15 +205,12 @@ const BookRide = () => {
                   </button>
                 ))}
               </div>
-              {/* Extended date picker */}
               <div className="mt-2">
                 <Input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
-                  className="w-48" />
+                  min={new Date().toISOString().split('T')[0]} className="w-48" />
               </div>
             </div>
 
-            {/* Available rides */}
             <div>
               <h2 className="text-lg font-semibold text-foreground mb-3">
                 {lang === 'ar' ? 'الرحلات المتاحة' : 'Available Rides'}
@@ -205,13 +224,32 @@ const BookRide = () => {
                 <div className="space-y-3">
                   {filteredRides.map((ride) => (
                     <button key={ride.id} onClick={() => selectRide(ride)}
-                      className="w-full text-start bg-card border border-border rounded-xl p-5 hover:border-secondary/40 hover:shadow-card-hover transition-all">
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-semibold text-foreground">
-                          {lang === 'ar' ? ride.routes?.name_ar : ride.routes?.name_en}
-                        </h3>
+                      disabled={ride.available_seats === 0}
+                      className="w-full text-start bg-card border border-border rounded-xl p-5 hover:border-secondary/40 hover:shadow-card-hover transition-all disabled:opacity-60 disabled:cursor-not-allowed">
+                      {/* Driver info */}
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
+                          {ride.driver_profile?.avatar_url ? (
+                            <img src={ride.driver_profile.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover" />
+                          ) : (
+                            <UserIcon className="w-5 h-5 text-primary" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-foreground text-sm truncate">
+                            {ride.driver_profile?.full_name || (lang === 'ar' ? 'سائق' : 'Driver')}
+                          </p>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <Car className="w-3 h-3" />
+                            <span>{ride.shuttle_info?.vehicle_model} · {ride.shuttle_info?.vehicle_plate}</span>
+                          </div>
+                        </div>
                         <span className="text-lg font-bold text-primary">{ride.routes?.price} EGP</span>
                       </div>
+
+                      <h3 className="font-semibold text-foreground text-sm mb-2">
+                        {lang === 'ar' ? ride.routes?.name_ar : ride.routes?.name_en}
+                      </h3>
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <MapPin className="w-4 h-4 text-green-500 shrink-0" />
                         <span className="truncate">{lang === 'ar' ? ride.routes?.origin_name_ar : ride.routes?.origin_name_en}</span>
@@ -228,7 +266,7 @@ const BookRide = () => {
                         </span>
                         <span className={`flex items-center gap-1 font-medium ${ride.available_seats <= 3 ? 'text-destructive' : 'text-green-600'}`}>
                           <Users className="w-3.5 h-3.5" />
-                          {ride.available_seats}/{ride.total_seats} {lang === 'ar' ? 'مقعد متاح' : 'seats left'}
+                          {ride.available_seats}/{ride.total_seats} {lang === 'ar' ? 'متاح' : 'left'}
                         </span>
                       </div>
                       {ride.available_seats <= 3 && ride.available_seats > 0 && (
@@ -240,7 +278,7 @@ const BookRide = () => {
                       {ride.available_seats === 0 && (
                         <div className="mt-2 flex items-center gap-1 text-xs text-destructive font-medium">
                           <AlertCircle className="w-3 h-3" />
-                          {lang === 'ar' ? 'مكتمل - لا توجد مقاعد' : 'Full - No seats available'}
+                          {lang === 'ar' ? 'مكتمل' : 'Full'}
                         </div>
                       )}
                     </button>
@@ -252,133 +290,132 @@ const BookRide = () => {
                   <p className="text-muted-foreground mb-2">
                     {lang === 'ar' ? 'لا توجد رحلات متاحة في هذا اليوم' : 'No rides available on this day'}
                   </p>
-                  <p className="text-sm text-muted-foreground">
-                    {lang === 'ar' ? 'جرب يوم آخر أو اطلب مسار جديد' : 'Try another day or request a new route'}
-                  </p>
                   <Link to="/request-route"><Button className="mt-4">{t('booking.requestNew')}</Button></Link>
                 </div>
               )}
             </div>
-
-            {/* All routes fallback */}
-            {filteredRides.length === 0 && filteredRoutes.length > 0 && (
-              <div className="mt-6">
-                <h3 className="text-sm font-medium text-muted-foreground mb-3">
-                  {lang === 'ar' ? 'جميع المسارات المتاحة (بدون جدول محدد):' : 'All available routes (no scheduled ride yet):'}
-                </h3>
-                <div className="space-y-2">
-                  {filteredRoutes.slice(0, 5).map((route) => (
-                    <div key={route.id} className="bg-card border border-border rounded-xl p-4">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-medium text-foreground text-sm">{lang === 'ar' ? route.name_ar : route.name_en}</h4>
-                        <span className="text-sm font-bold text-primary">{route.price} EGP</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
-                        <MapPin className="w-3 h-3 text-green-500" />
-                        <span>{lang === 'ar' ? route.origin_name_ar : route.origin_name_en}</span>
-                        <ArrowRight className="w-3 h-3" />
-                        <span>{lang === 'ar' ? route.destination_name_ar : route.destination_name_en}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
-        {step === 'details' && selectedRide && selectedRoute && (
-          <div className="space-y-6">
+        {step === 'details' && selectedRide && (
+          <div className="space-y-5">
             <button onClick={() => { setStep('browse'); setSelectedRide(null); }}
               className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
               <Back className="w-4 h-4" />{t('booking.backToRoutes')}
             </button>
 
-            <div className="bg-card border border-border rounded-2xl p-6">
-              <h2 className="text-xl font-bold text-foreground mb-1">
-                {lang === 'ar' ? selectedRoute.name_ar : selectedRoute.name_en}
-              </h2>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
-                <span>{lang === 'ar' ? selectedRoute.origin_name_ar : selectedRoute.origin_name_en}</span>
-                <ArrowRight className="w-4 h-4" />
-                <span>{lang === 'ar' ? selectedRoute.destination_name_ar : selectedRoute.destination_name_en}</span>
+            {/* Driver & Vehicle Card */}
+            <div className="bg-card border border-border rounded-2xl p-5">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
+                  {driverProfile?.avatar_url ? (
+                    <img src={driverProfile.avatar_url} alt="" className="w-14 h-14 rounded-full object-cover" />
+                  ) : (
+                    <UserIcon className="w-7 h-7 text-primary" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-bold text-foreground text-lg">
+                    {driverProfile?.full_name || (lang === 'ar' ? 'سائق' : 'Driver')}
+                  </h3>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                    <Car className="w-4 h-4" />
+                    <span>{shuttleInfo?.vehicle_model}</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span className="font-mono text-xs bg-muted px-2 py-0.5 rounded">{shuttleInfo?.vehicle_plate}</span>
+                  </div>
+                </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3 mb-6">
-                <div className="bg-surface rounded-xl p-4 text-center">
-                  <p className="text-xl font-bold text-primary">{selectedRoute.price} EGP</p>
-                  <p className="text-xs text-muted-foreground">{t('booking.perSeat')}</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-surface rounded-xl p-3 text-center">
+                  <p className="text-xl font-bold text-primary">{selectedRide.routes?.price} EGP</p>
+                  <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'للراكب' : 'per person'}</p>
                 </div>
-                <div className="bg-surface rounded-xl p-4 text-center">
+                <div className="bg-surface rounded-xl p-3 text-center">
                   <p className="text-xl font-bold text-foreground">{selectedRide.departure_time?.slice(0, 5)}</p>
                   <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'الانطلاق' : 'Departure'}</p>
                 </div>
-                <div className="bg-surface rounded-xl p-4 text-center">
+                <div className="bg-surface rounded-xl p-3 text-center">
                   <p className={`text-xl font-bold ${selectedRide.available_seats <= 3 ? 'text-destructive' : 'text-green-600'}`}>
                     {selectedRide.available_seats}/{selectedRide.total_seats}
                   </p>
-                  <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'مقاعد متاحة' : 'Seats left'}</p>
+                  <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'متاح' : 'Seats'}</p>
                 </div>
               </div>
+            </div>
 
-              <div className="bg-surface rounded-xl p-4 mb-6">
-                <div className="flex items-center gap-2 text-sm">
-                  <Calendar className="w-4 h-4 text-primary" />
-                  <span className="font-medium text-foreground">{selectedRide.ride_date}</span>
-                  <span className="text-muted-foreground">·</span>
-                  <Clock className="w-4 h-4 text-primary" />
-                  <span className="font-medium text-foreground">{selectedRide.departure_time?.slice(0, 5)}</span>
-                </div>
+            {/* Route Map */}
+            <div className="bg-card border border-border rounded-2xl overflow-hidden">
+              <div className="h-[250px]">
+                <MapView
+                  className="h-full"
+                  markers={routeMarkers}
+                  origin={selectedRide.routes ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng } : undefined}
+                  destination={selectedRide.routes ? { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng } : undefined}
+                  showDirections={!!selectedRide.routes}
+                  zoom={12}
+                  showUserLocation={false}
+                />
+              </div>
+            </div>
+
+            {/* Stop Selection */}
+            <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+              <h3 className="font-semibold text-foreground">
+                {lang === 'ar' ? 'اختر محطات الركوب والنزول' : 'Select Pickup & Dropoff Stops'}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {lang === 'ar' ? 'المحطات على مسار السائق فقط' : 'These are stops along the driver\'s route'}
+              </p>
+
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-green-500" />
+                  {t('booking.pickupStop')}
+                </Label>
+                <select className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  value={selectedPickup} onChange={(e) => { setSelectedPickup(e.target.value); setSelectedDropoff(''); }}>
+                  <option value="">{t('booking.selectStop')}</option>
+                  {pickupStops.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {lang === 'ar' ? s.name_ar : s.name_en} (#{s.stop_order})
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              {routeStops.length > 0 && (
-                <div className="space-y-3 mb-6">
-                  <div className="space-y-2">
-                    <Label>{t('booking.pickupStop')}</Label>
-                    <select className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                      value={selectedPickup} onChange={(e) => setSelectedPickup(e.target.value)}>
-                      <option value="">{t('booking.selectStop')}</option>
-                      {routeStops.filter(s => s.stop_type !== 'dropoff').map(s => (
-                        <option key={s.id} value={s.id}>{lang === 'ar' ? s.name_ar : s.name_en}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{t('booking.dropoffStop')}</Label>
-                    <select className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                      value={selectedDropoff} onChange={(e) => setSelectedDropoff(e.target.value)}>
-                      <option value="">{t('booking.selectStop')}</option>
-                      {routeStops.filter(s => s.stop_type !== 'pickup').map(s => (
-                        <option key={s.id} value={s.id}>{lang === 'ar' ? s.name_ar : s.name_en}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-2 mb-6">
-                <Label>{t('booking.seats')}</Label>
-                <div className="flex items-center gap-3">
-                  <Button variant="outline" size="icon" onClick={() => setSeats(Math.max(1, seats - 1))} disabled={seats <= 1}>-</Button>
-                  <span className="text-lg font-bold w-8 text-center">{seats}</span>
-                  <Button variant="outline" size="icon"
-                    onClick={() => setSeats(Math.min(selectedRide.available_seats, seats + 1))}
-                    disabled={seats >= selectedRide.available_seats}>+</Button>
-                  <span className="text-xs text-muted-foreground">
-                    ({lang === 'ar' ? `حد أقصى ${selectedRide.available_seats}` : `max ${selectedRide.available_seats}`})
-                  </span>
-                </div>
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-destructive" />
+                  {t('booking.dropoffStop')}
+                </Label>
+                <select className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  value={selectedDropoff} onChange={(e) => setSelectedDropoff(e.target.value)}
+                  disabled={!selectedPickup}>
+                  <option value="">{t('booking.selectStop')}</option>
+                  {validDropoffs.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {lang === 'ar' ? s.name_ar : s.name_en} (#{s.stop_order})
+                    </option>
+                  ))}
+                </select>
               </div>
+            </div>
 
-              <div className="border-t border-border pt-4 mb-4">
-                <div className="flex justify-between text-lg font-bold">
-                  <span>{t('booking.total')}</span>
-                  <span className="text-primary">{selectedRoute.price * seats} EGP</span>
-                </div>
+            {/* Summary & Book */}
+            <div className="bg-card border border-border rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-muted-foreground">{lang === 'ar' ? 'عدد المقاعد' : 'Seats'}</span>
+                <span className="font-medium text-foreground">1</span>
+              </div>
+              <div className="flex items-center justify-between mb-4 border-t border-border pt-3">
+                <span className="text-lg font-bold">{t('booking.total')}</span>
+                <span className="text-lg font-bold text-primary">{selectedRide.routes?.price} EGP</span>
               </div>
 
               <Button className="w-full" size="lg" onClick={handleBook}
-                disabled={loading || selectedRide.available_seats === 0 || seats > selectedRide.available_seats}>
+                disabled={loading || selectedRide.available_seats === 0 || !selectedPickup || !selectedDropoff}>
                 {loading ? t('auth.loading') : (selectedRide.available_seats === 0
                   ? (lang === 'ar' ? 'مكتمل' : 'Full')
                   : t('booking.confirm'))}
