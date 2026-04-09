@@ -293,6 +293,18 @@ const ActiveRide = () => {
           zoom={12}
           showUserLocation
         />
+        {/* Floating passenger count badge */}
+        <div className="absolute top-3 start-3 z-[5] bg-card border border-border rounded-xl shadow-lg px-4 py-2.5 flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <UserCheck className="w-4 h-4 text-primary" />
+            <span className="text-sm font-bold text-foreground">{boardedCount}</span>
+            <span className="text-xs text-muted-foreground">/ {totalCount}</span>
+          </div>
+          <div className="w-px h-5 bg-border" />
+          <span className="text-xs text-muted-foreground">
+            {lang === 'ar' ? 'في الشاتل' : 'on board'}
+          </span>
+        </div>
       </div>
 
       {/* Stops timeline */}
