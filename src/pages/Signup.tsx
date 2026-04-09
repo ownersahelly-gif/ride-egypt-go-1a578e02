@@ -39,7 +39,7 @@ const FileUploadField = ({
   return (
     <div className="space-y-2">
       <Label>{label} {required && <span className="text-destructive">*</span>}</Label>
-      <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />
+      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
       {value ? (
         <div className="relative border border-border rounded-xl overflow-hidden">
           <img src={value.preview} alt={label} className="w-full h-32 object-cover" />
