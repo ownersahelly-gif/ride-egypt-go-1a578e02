@@ -329,10 +329,9 @@ const Signup = () => {
             </button>
           </div>
 
-          <p className="text-center text-sm text-muted-foreground mt-6">
-            {t('auth.hasAccount')}{' '}
-            <Link to="/login" className="text-primary font-medium hover:underline">{t('auth.loginLink')}</Link>
-          </p>
+          <Link to="/login" className="block text-center text-sm text-primary font-medium hover:underline mt-6">
+            {t('auth.hasAccount')} {t('auth.loginLink')}
+          </Link>
         </div>
       </div>
     );
@@ -398,10 +397,9 @@ const Signup = () => {
               <Arrow className="w-4 h-4" />
             </Button>
 
-            <p className="text-center text-sm text-muted-foreground">
-              {t('auth.hasAccount')}{' '}
-              <Link to="/login" className="text-primary font-medium hover:underline">{t('auth.loginLink')}</Link>
-            </p>
+            <Link to="/login" className="block text-center text-sm text-primary font-medium hover:underline">
+              {t('auth.hasAccount')} {t('auth.loginLink')}
+            </Link>
           </form>
         </div>
       </div>
@@ -592,10 +590,9 @@ const Signup = () => {
             </>
           )}
 
-          <p className="text-center text-sm text-muted-foreground">
-            {t('auth.hasAccount')}{' '}
-            <Link to="/login" className="text-primary font-medium hover:underline">{t('auth.loginLink')}</Link>
-          </p>
+          <Link to="/login" className="block text-center text-sm text-primary font-medium hover:underline">
+            {t('auth.hasAccount')} {t('auth.loginLink')}
+          </Link>
         </div>
       </div>
     </div>
