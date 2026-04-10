@@ -223,6 +223,8 @@ export type Database = {
           id: string
           is_active: boolean
           is_recurring: boolean
+          min_passengers: number
+          return_time: string | null
           route_id: string
           shuttle_id: string
           updated_at: string
@@ -235,6 +237,8 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_recurring?: boolean
+          min_passengers?: number
+          return_time?: string | null
           route_id: string
           shuttle_id: string
           updated_at?: string
@@ -247,6 +251,8 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_recurring?: boolean
+          min_passengers?: number
+          return_time?: string | null
           route_id?: string
           shuttle_id?: string
           updated_at?: string
