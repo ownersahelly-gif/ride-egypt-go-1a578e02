@@ -15,7 +15,7 @@ import {
   Loader2, Eye, Database, Settings, Phone, Package
 } from 'lucide-react';
 
-type AdminTab = 'routes' | 'drivers' | 'shuttles' | 'bookings' | 'analytics' | 'approvals' | 'settings' | 'carpool';
+type AdminTab = 'routes' | 'drivers' | 'shuttles' | 'bookings' | 'analytics' | 'approvals' | 'settings' | 'carpool' | 'users' | 'route_requests';
 
 const AdminPanel = () => {
   const { user, signOut } = useAuth();
@@ -44,6 +44,9 @@ const AdminPanel = () => {
   const [shuttles, setShuttles] = useState<any[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
   const [stats, setStats] = useState({ totalBookings: 0, totalRevenue: 0, activeRoutes: 0, activeDrivers: 0, pendingApps: 0 });
+  const [allProfiles, setAllProfiles] = useState<any[]>([]);
+  const [routeRequests, setRouteRequests] = useState<any[]>([]);
+  const [routeRequestProfiles, setRouteRequestProfiles] = useState<Record<string, any>>({});
 
   // Route form
   const [showRouteForm, setShowRouteForm] = useState(false);
@@ -69,7 +72,7 @@ const AdminPanel = () => {
   }, [user]);
 
   const fetchAllData = async () => {
-    const [routesRes, appsRes, shuttlesRes, bookingsRes, settingsRes, bundlesRes, carpoolVerRes] = await Promise.all([
+    const [routesRes, appsRes, shuttlesRes, bookingsRes, settingsRes, bundlesRes, carpoolVerRes, profilesRes, routeReqRes] = await Promise.all([
       supabase.from('routes').select('*').order('created_at', { ascending: false }),
       supabase.from('driver_applications').select('*').order('created_at', { ascending: false }),
       supabase.from('shuttles').select('*, routes(name_en, name_ar)').order('created_at', { ascending: false }),
@@ -77,7 +80,18 @@ const AdminPanel = () => {
       supabase.from('app_settings').select('*').eq('key', 'instapay_phone').single(),
       supabase.from('ride_bundles').select('*, routes(name_en, name_ar)').order('created_at', { ascending: false }),
       supabase.from('carpool_verifications').select('*').order('created_at', { ascending: false }),
+      supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+      supabase.from('route_requests').select('*').order('created_at', { ascending: false }),
     ]);
+    setAllProfiles(profilesRes.data || []);
+    const rrs = routeReqRes.data || [];
+    setRouteRequests(rrs);
+    const rrUserIds = [...new Set(rrs.map((r: any) => r.user_id))];
+    if (rrUserIds.length > 0) {
+      const rrMap: Record<string, any> = {};
+      (profilesRes.data || []).filter((p: any) => rrUserIds.includes(p.user_id)).forEach((p: any) => { rrMap[p.user_id] = p; });
+      setRouteRequestProfiles(rrMap);
+    }
 
     if (settingsRes.data) setInstapayPhone(settingsRes.data.value);
     setBundles(bundlesRes.data || []);
@@ -354,6 +368,8 @@ const AdminPanel = () => {
     { key: 'drivers', icon: Users, label: lang === 'ar' ? 'السائقين' : 'Drivers' },
     { key: 'shuttles', icon: Car, label: lang === 'ar' ? 'الشاتلات' : 'Shuttles' },
     { key: 'bookings', icon: Ticket, label: lang === 'ar' ? 'الحجوزات' : 'Bookings' },
+    { key: 'users', icon: Users, label: lang === 'ar' ? 'المستخدمين' : 'Users' },
+    { key: 'route_requests', icon: MapPin, label: lang === 'ar' ? 'طلبات المسارات' : 'Route Requests' },
     { key: 'settings', icon: Settings, label: lang === 'ar' ? 'الإعدادات' : 'Settings' },
   ];
 
@@ -1071,6 +1087,104 @@ const AdminPanel = () => {
                 {lang === 'ar' ? 'تفعيل رحلة تجريبية الآن' : 'Activate Test Trip Now'}
               </Button>
             </div>
+          </div>
+        )}
+        {/* Users Tab */}
+        {tab === 'users' && (
+          <div className="space-y-4">
+            <h2 className="text-xl font-bold text-foreground">{lang === 'ar' ? 'المستخدمين المسجلين' : 'Registered Users'}</h2>
+            <p className="text-sm text-muted-foreground">{lang === 'ar' ? `${allProfiles.length} مستخدم مسجل` : `${allProfiles.length} registered users`}</p>
+            {allProfiles.length === 0 ? (
+              <div className="bg-card border border-border rounded-xl p-8 text-center text-muted-foreground">
+                {lang === 'ar' ? 'لا يوجد مستخدمين بعد' : 'No users yet'}
+              </div>
+            ) : (
+              <div className="bg-card border border-border rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/30">
+                        <th className="text-start p-3 font-medium text-muted-foreground">{lang === 'ar' ? 'الاسم' : 'Name'}</th>
+                        <th className="text-start p-3 font-medium text-muted-foreground">{lang === 'ar' ? 'الهاتف' : 'Phone'}</th>
+                        <th className="text-start p-3 font-medium text-muted-foreground">{lang === 'ar' ? 'النوع' : 'Type'}</th>
+                        <th className="text-start p-3 font-medium text-muted-foreground">{lang === 'ar' ? 'تاريخ التسجيل' : 'Joined'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allProfiles.map((p: any) => (
+                        <tr key={p.id} className="border-b border-border last:border-0 hover:bg-muted/20">
+                          <td className="p-3 font-medium text-foreground">{p.full_name || '—'}</td>
+                          <td className="p-3 text-muted-foreground">{p.phone || '—'}</td>
+                          <td className="p-3">
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${p.user_type === 'admin' ? 'bg-primary/10 text-primary' : p.user_type === 'driver' ? 'bg-green-100 text-green-700' : 'bg-muted text-muted-foreground'}`}>
+                              {p.user_type}
+                            </span>
+                          </td>
+                          <td className="p-3 text-muted-foreground">{new Date(p.created_at).toLocaleDateString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Route Requests Tab */}
+        {tab === 'route_requests' && (
+          <div className="space-y-4">
+            <h2 className="text-xl font-bold text-foreground">{lang === 'ar' ? 'طلبات المسارات' : 'Route Requests'}</h2>
+            <p className="text-sm text-muted-foreground">{lang === 'ar' ? `${routeRequests.length} طلب` : `${routeRequests.length} requests`}</p>
+            {routeRequests.length === 0 ? (
+              <div className="bg-card border border-border rounded-xl p-8 text-center text-muted-foreground">
+                {lang === 'ar' ? 'لا توجد طلبات مسارات بعد' : 'No route requests yet'}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {routeRequests.map((rr: any) => {
+                  const prof = routeRequestProfiles[rr.user_id];
+                  const dayLabels = lang === 'ar'
+                    ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+                    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                  return (
+                    <div key={rr.id} className="bg-card border border-border rounded-xl p-5 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-foreground">{prof?.full_name || rr.user_id.slice(0, 8)}</p>
+                          <p className="text-xs text-muted-foreground">{new Date(rr.created_at).toLocaleString()}</p>
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[rr.status] || 'bg-muted text-muted-foreground'}`}>
+                          {rr.status}
+                        </span>
+                      </div>
+                      <div className="grid sm:grid-cols-2 gap-2 text-sm">
+                        <div className="flex items-start gap-2">
+                          <Navigation className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
+                          <span className="text-foreground">{rr.origin_name}</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <MapPin className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                          <span className="text-foreground">{rr.destination_name}</span>
+                        </div>
+                      </div>
+                      {rr.preferred_time && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> {rr.preferred_time}
+                        </p>
+                      )}
+                      {rr.preferred_days && rr.preferred_days.length > 0 && (
+                        <div className="flex gap-1 flex-wrap">
+                          {rr.preferred_days.map((d: number) => (
+                            <span key={d} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">{dayLabels[d]}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>
