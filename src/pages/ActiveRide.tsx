@@ -174,8 +174,8 @@ const ActiveRide = () => {
         });
       }
 
-      // Always add dropoff (for both confirmed and boarded — so driver sees full route)
-      if (b.status === 'confirmed' || b.status === 'boarded') {
+      // Only add dropoff for passengers who actually boarded (verified boarding code)
+      if (b.status === 'boarded') {
         stops.push({
           bookingId: b.id,
           userId: b.user_id,
