@@ -71,6 +71,7 @@ const Dashboard = () => {
   const [mapClickTarget, setMapClickTarget] = useState<'pickup' | 'dropoff'>('pickup');
   const [tripDirection, setTripDirection] = useState<'go' | 'return' | 'both'>('both');
   const [routeDirections, setRouteDirections] = useState<any>(null);
+  const [nearestRoutePoint, setNearestRoutePoint] = useState<{ lat: number; lng: number } | null>(null);
 
   // Saved locations & bundles
   const [savedLocations, setSavedLocations] = useState<any[]>([]);
@@ -223,21 +224,30 @@ const Dashboard = () => {
   };
 
   // Validate custom point
-  /** Find minimum distance (km) from a point to the route polyline */
-  const minDistanceToRouteKm = useCallback((point: { lat: number; lng: number }): number => {
-    if (!routeDirections) return 999;
-    const path = routeDirections.routes?.[0]?.overview_path;
-    if (!path || path.length === 0) return 999;
-    let minDist = Infinity;
-    for (const p of path) {
-      const dist = haversineDistanceKm(point, { lat: p.lat(), lng: p.lng() });
-      if (dist < minDist) minDist = dist;
+  /** Find minimum distance (km) from a point to the route - uses polyline if available, otherwise origin/dest */
+  const getDistanceToRoute = (point: { lat: number; lng: number }): number => {
+    // Try polyline path first
+    if (routeDirections) {
+      const path = routeDirections.routes?.[0]?.overview_path;
+      if (path && path.length > 0) {
+        let minDist = Infinity;
+        for (const p of path) {
+          const dist = haversineDistanceKm(point, { lat: p.lat(), lng: p.lng() });
+          if (dist < minDist) minDist = dist;
+        }
+        return minDist;
+      }
     }
-    return minDist;
-  }, [routeDirections]);
+    // Fallback: distance to nearest endpoint
+    if (selectedRide?.routes) {
+      const dToOrigin = haversineDistanceKm(point, { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng });
+      const dToDest = haversineDistanceKm(point, { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng });
+      return Math.min(dToOrigin, dToDest);
+    }
+    return 999;
+  };
 
   const MAX_DISTANCE_KM = 2;
-
   const validateCustomPoint = useCallback(async (
     point: { lat: number; lng: number; name: string },
     type: 'pickup' | 'dropoff',
@@ -250,9 +260,32 @@ const Dashboard = () => {
     setResult(null);
     setCustom(point);
 
-    const distKm = minDistanceToRouteKm(point);
+    // Calculate distance to route
+    const distKm = getDistanceToRoute(point);
+
+    // Find nearest point on route for visual line
+    let nearest: { lat: number; lng: number } | null = null;
+    if (routeDirections) {
+      const path = routeDirections.routes?.[0]?.overview_path;
+      if (path && path.length > 0) {
+        let minDist = Infinity;
+        for (const p of path) {
+          const d = haversineDistanceKm(point, { lat: p.lat(), lng: p.lng() });
+          if (d < minDist) { minDist = d; nearest = { lat: p.lat(), lng: p.lng() }; }
+        }
+      }
+    }
+    if (!nearest && selectedRide.routes) {
+      const dO = haversineDistanceKm(point, { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng });
+      const dD = haversineDistanceKm(point, { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng });
+      nearest = dO < dD
+        ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng }
+        : { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng };
+    }
+    setNearestRoutePoint(nearest);
+
     const ok = distKm <= MAX_DISTANCE_KM;
-    const onRoute = distKm <= 0.1; // within 100m counts as on-route
+    const onRoute = distKm <= 0.1;
     setResult({ ok, minutes: Math.round(distKm * 10) / 10, onRoute });
 
     if (!ok) {
@@ -263,9 +296,16 @@ const Dashboard = () => {
           : `This location is ${distKm.toFixed(1)} km from the route (max ${MAX_DISTANCE_KM} km)`,
         variant: 'destructive',
       });
+    } else {
+      toast({
+        title: lang === 'ar' ? '✅ موقع مقبول' : '✅ Location accepted',
+        description: lang === 'ar'
+          ? `يبعد ${distKm.toFixed(1)} كم عن المسار`
+          : `${distKm.toFixed(1)} km from route`,
+      });
     }
     setValidating(false);
-  }, [selectedRide, minDistanceToRouteKm, lang, toast]);
+  }, [selectedRide, routeDirections, lang, toast]);
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
     if (step !== 'details') return;
@@ -563,7 +603,14 @@ const Dashboard = () => {
             {customPoint && result && (
               <div className={`flex items-center gap-2 text-xs p-2 rounded-lg ${result.ok ? 'bg-green-50 text-green-700' : 'bg-destructive/10 text-destructive'}`}>
                 {result.ok ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                <span className="font-medium">{customPoint.name}</span>
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium block truncate">{customPoint.name}</span>
+                  <span className="text-[10px] opacity-75">
+                    {result.ok
+                      ? (lang === 'ar' ? `${result.minutes} كم من المسار ✓` : `${result.minutes} km from route ✓`)
+                      : (lang === 'ar' ? `${result.minutes} كم من المسار (الحد ${MAX_DISTANCE_KM} كم)` : `${result.minutes} km from route (max ${MAX_DISTANCE_KM} km)`)}
+                  </span>
+                </div>
               </div>
             )}
           </div>
@@ -617,6 +664,15 @@ const Dashboard = () => {
           zoom={12}
           showUserLocation
           onMapClick={step === 'details' && isNearbyMode ? handleMapClick : undefined}
+          connectionLine={
+            nearestRoutePoint && (customPickup || customDropoff)
+              ? {
+                  from: (customPickup && pickupMode === 'nearby' ? customPickup : customDropoff) || { lat: 0, lng: 0 },
+                  to: nearestRoutePoint,
+                  color: (pickupResult?.ok === false || dropoffResult?.ok === false) ? '#EF4444' : '#22C55E',
+                }
+              : null
+          }
         />
         {/* Tap-on-map hint when nearby mode is active */}
         {step === 'details' && isNearbyMode && (

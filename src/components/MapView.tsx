@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect } from 'react';
-import { GoogleMap, useJsApiLoader, Marker, DirectionsRenderer } from '@react-google-maps/api';
+import { GoogleMap, useJsApiLoader, Marker, DirectionsRenderer, Polyline } from '@react-google-maps/api';
 import { Loader2, LocateFixed } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -20,6 +20,7 @@ interface MapViewProps {
   className?: string;
   onMapClick?: (lat: number, lng: number) => void;
   showUserLocation?: boolean;
+  connectionLine?: { from: { lat: number; lng: number }; to: { lat: number; lng: number }; color?: string } | null;
 }
 
 const MapView = ({
@@ -33,6 +34,7 @@ const MapView = ({
   className = '',
   onMapClick,
   showUserLocation = true,
+  connectionLine = null,
 }: MapViewProps) => {
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -205,6 +207,21 @@ const MapView = ({
           />
         )}
         {directions && <DirectionsRenderer directions={directions} options={{ suppressMarkers: true }} />}
+        {connectionLine && (
+          <Polyline
+            path={[connectionLine.from, connectionLine.to]}
+            options={{
+              strokeColor: connectionLine.color || '#EF4444',
+              strokeWeight: 3,
+              strokeOpacity: 0.8,
+              icons: [{
+                icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, scale: 3 },
+                offset: '0',
+                repeat: '15px',
+              }],
+            }}
+          />
+        )}
       </GoogleMap>
 
       {showUserLocation && (
