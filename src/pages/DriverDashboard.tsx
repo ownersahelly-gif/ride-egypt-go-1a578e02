@@ -314,7 +314,7 @@ const DriverDashboard = () => {
     setQuickAddDay(null);
     setSavingQuickAdd(false);
   };
-
+  const handleMapClick = (lat: number, lng: number) => {
     if (!pickingLocation) return;
     if (pickingLocation === 'origin') setRouteRequestForm(p => ({ ...p, origin_lat: lat, origin_lng: lng, origin_name: p.origin_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}` }));
     else setRouteRequestForm(p => ({ ...p, destination_lat: lat, destination_lng: lng, destination_name: p.destination_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}` }));
