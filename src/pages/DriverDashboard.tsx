@@ -764,6 +764,7 @@ const DriverDashboard = () => {
                     const routeDestination = routeObj ? { lat: routeObj.destination_lat, lng: routeObj.destination_lng } : { lat: 30.06, lng: 31.25 };
                     const optimizedWaypoints = isExpanded ? optimizePassengerOrder(activeBookings, routeOrigin, routeDestination) : [];
 
+                    const validWaypoints = optimizedWaypoints.filter(wp => wp?.coords);
                     // Merge passengers at same location into single markers
                     const mergeNearbyMarkers = (wps: typeof validWaypoints) => {
                       const merged: { lat: number; lng: number; label: string; color: 'orange' | 'purple' }[] = [];
