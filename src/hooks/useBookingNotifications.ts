@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -88,10 +88,12 @@ export const useBookingNotifications = () => {
  */
 export const useDriverBookingNotifications = (shuttleId: string | null) => {
   const [newBookingsCount, setNewBookingsCount] = useState(0);
+  const mountedRef = useRef(true);
 
   const acknowledge = useCallback(() => setNewBookingsCount(0), []);
 
   useEffect(() => {
+    mountedRef.current = true;
     if (!shuttleId) return;
 
     const channel = supabase
@@ -105,6 +107,7 @@ export const useDriverBookingNotifications = (shuttleId: string | null) => {
           filter: `shuttle_id=eq.${shuttleId}`,
         },
         () => {
+          if (!mountedRef.current) return;
           playNotificationSound();
           setNewBookingsCount(prev => prev + 1);
           toast.info('New Booking! 📋', {
@@ -115,6 +118,7 @@ export const useDriverBookingNotifications = (shuttleId: string | null) => {
       .subscribe();
 
     return () => {
+      mountedRef.current = false;
       supabase.removeChannel(channel);
     };
   }, [shuttleId]);
