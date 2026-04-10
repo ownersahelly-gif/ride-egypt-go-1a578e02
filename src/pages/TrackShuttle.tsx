@@ -463,9 +463,8 @@ const TrackShuttle = () => {
                         : `${etaMinutes} ${lang === 'ar' ? 'دقيقة' : 'min'}`}
                     </p>
                     <p className="text-primary-foreground/80 text-xs">
-                      {tripNotStartedYet
-                        ? (lang === 'ar' ? 'الوقت المتبقي حتى وصول الشاتل' : 'Until shuttle arrives at your pickup')
-                        : (lang === 'ar' ? 'الوقت المتوقع للوصول إليك' : 'Estimated arrival to you')}
+                      {lang === 'ar' ? 'الوقت المتوقع للوصول إليك' : 'Estimated arrival to you'}
+                    </p>
                     </p>
                   </div>
                 </div>
