@@ -223,28 +223,28 @@ const Dashboard = () => {
     }
   };
 
-  // Validate custom point
-  /** Find minimum distance (km) from a point to the route - uses polyline if available, otherwise origin/dest */
-  const getDistanceToRoute = (point: { lat: number; lng: number }): number => {
-    // Try polyline path first
+  // Validate custom point using Google Directions driving distance
+  /** Find nearest point on route polyline (straight-line) for the visual connection line */
+  const findNearestRoutePoint = (point: { lat: number; lng: number }): { nearest: { lat: number; lng: number } | null } => {
+    let nearest: { lat: number; lng: number } | null = null;
+    let minDist = Infinity;
     if (routeDirections) {
       const path = routeDirections.routes?.[0]?.overview_path;
       if (path && path.length > 0) {
-        let minDist = Infinity;
         for (const p of path) {
-          const dist = haversineDistanceKm(point, { lat: p.lat(), lng: p.lng() });
-          if (dist < minDist) minDist = dist;
+          const d = haversineDistanceKm(point, { lat: p.lat(), lng: p.lng() });
+          if (d < minDist) { minDist = d; nearest = { lat: p.lat(), lng: p.lng() }; }
         }
-        return minDist;
       }
     }
-    // Fallback: distance to nearest endpoint
-    if (selectedRide?.routes) {
-      const dToOrigin = haversineDistanceKm(point, { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng });
-      const dToDest = haversineDistanceKm(point, { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng });
-      return Math.min(dToOrigin, dToDest);
+    if (!nearest && selectedRide?.routes) {
+      const dO = haversineDistanceKm(point, { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng });
+      const dD = haversineDistanceKm(point, { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng });
+      nearest = dO < dD
+        ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng }
+        : { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng };
     }
-    return 999;
+    return { nearest };
   };
 
   const MAX_DISTANCE_KM = 2;
@@ -260,48 +260,56 @@ const Dashboard = () => {
     setResult(null);
     setCustom(point);
 
-    // Calculate distance to route
-    const distKm = getDistanceToRoute(point);
-
     // Find nearest point on route for visual line
-    let nearest: { lat: number; lng: number } | null = null;
-    if (routeDirections) {
-      const path = routeDirections.routes?.[0]?.overview_path;
-      if (path && path.length > 0) {
-        let minDist = Infinity;
-        for (const p of path) {
-          const d = haversineDistanceKm(point, { lat: p.lat(), lng: p.lng() });
-          if (d < minDist) { minDist = d; nearest = { lat: p.lat(), lng: p.lng() }; }
-        }
-      }
-    }
-    if (!nearest && selectedRide.routes) {
-      const dO = haversineDistanceKm(point, { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng });
-      const dD = haversineDistanceKm(point, { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng });
-      nearest = dO < dD
-        ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng }
-        : { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng };
-    }
+    const { nearest } = findNearestRoutePoint(point);
     setNearestRoutePoint(nearest);
 
-    const ok = distKm <= MAX_DISTANCE_KM;
-    const onRoute = distKm <= 0.1;
-    setResult({ ok, minutes: Math.round(distKm * 10) / 10, onRoute });
+    // Use Google Directions API to get actual driving distance from nearest route point to the selected point
+    let drivingDistanceKm: number;
+    if (nearest && typeof google !== 'undefined') {
+      try {
+        const directionsService = new google.maps.DirectionsService();
+        const result = await new Promise<google.maps.DirectionsResult | null>((resolve) => {
+          directionsService.route({
+            origin: nearest,
+            destination: point,
+            travelMode: google.maps.TravelMode.DRIVING,
+          }, (res, status) => {
+            resolve(status === 'OK' ? res : null);
+          });
+        });
+        if (result?.routes?.[0]?.legs?.[0]) {
+          drivingDistanceKm = (result.routes[0].legs[0].distance?.value || 0) / 1000;
+        } else {
+          // Fallback to straight-line if directions fail
+          drivingDistanceKm = haversineDistanceKm(point, nearest);
+        }
+      } catch {
+        drivingDistanceKm = haversineDistanceKm(point, nearest);
+      }
+    } else {
+      // Fallback
+      drivingDistanceKm = nearest ? haversineDistanceKm(point, nearest) : 999;
+    }
+
+    const ok = drivingDistanceKm <= MAX_DISTANCE_KM;
+    const onRoute = drivingDistanceKm <= 0.1;
+    setResult({ ok, minutes: Math.round(drivingDistanceKm * 10) / 10, onRoute });
 
     if (!ok) {
       toast({
         title: lang === 'ar' ? 'موقع بعيد عن المسار' : 'Too far from route',
         description: lang === 'ar'
-          ? `هذا الموقع يبعد ${distKm.toFixed(1)} كم عن المسار (الحد الأقصى ${MAX_DISTANCE_KM} كم)`
-          : `This location is ${distKm.toFixed(1)} km from the route (max ${MAX_DISTANCE_KM} km)`,
+          ? `المسافة بالسيارة ${drivingDistanceKm.toFixed(1)} كم عن المسار (الحد الأقصى ${MAX_DISTANCE_KM} كم)`
+          : `Driving distance is ${drivingDistanceKm.toFixed(1)} km from route (max ${MAX_DISTANCE_KM} km)`,
         variant: 'destructive',
       });
     } else {
       toast({
         title: lang === 'ar' ? '✅ موقع مقبول' : '✅ Location accepted',
         description: lang === 'ar'
-          ? `يبعد ${distKm.toFixed(1)} كم عن المسار`
-          : `${distKm.toFixed(1)} km from route`,
+          ? `المسافة بالسيارة ${drivingDistanceKm.toFixed(1)} كم عن المسار`
+          : `Driving distance: ${drivingDistanceKm.toFixed(1)} km from route`,
       });
     }
     setValidating(false);
