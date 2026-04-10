@@ -127,27 +127,28 @@ const Dashboard = () => {
     ? Math.max(10, Math.round(drivingDistanceKm * pricePerKm))
     : null;
 
-  // Fetch user profile, roles, settings
+  // Fetch settings (always), user profile (if logged in)
   useEffect(() => {
+    // Always fetch price
+    supabase.from('app_settings').select('value').eq('key', 'price_per_km').single()
+      .then(({ data }) => { if (data?.value) setPricePerKm(parseFloat(data.value)); });
+    supabase.from('app_settings').select('value').eq('key', 'instapay_phone').single()
+      .then(({ data }) => { if (data) setInstapayPhone(data.value); });
+
     if (!user) return;
-    const fetchData = async () => {
-      const [{ data: profileData }, { data: rolesData }, { data: settingsData }] = await Promise.all([
+    const fetchUserData = async () => {
+      const [{ data: profileData }, { data: rolesData }] = await Promise.all([
         supabase.from('profiles').select('*').eq('user_id', user.id).single(),
         supabase.from('user_roles').select('role').eq('user_id', user.id),
-        supabase.from('app_settings').select('value').eq('key', 'price_per_km').single(),
       ]);
       setProfile(profileData);
-      if (settingsData?.value) setPricePerKm(parseFloat(settingsData.value));
       const roles = (rolesData || []).map(r => r.role);
       setIsAdmin(roles.includes('admin'));
       const driverFlag = profileData?.user_type === 'driver' || roles.includes('moderator');
       setIsDriver(driverFlag);
       if (driverFlag) { navigate('/driver-dashboard'); return; }
     };
-    fetchData();
-
-    supabase.from('app_settings').select('value').eq('key', 'instapay_phone').single()
-      .then(({ data }) => { if (data) setInstapayPhone(data.value); });
+    fetchUserData();
   }, [user]);
 
   // Date options
@@ -446,7 +447,8 @@ const Dashboard = () => {
 
   // Booking handler
   const handleBook = async (asWaitlist = false) => {
-    if (!user || !selectedRide) return;
+    if (!user) { navigate('/login'); return; }
+    if (!selectedRide) return;
     if (!isPickupValid || !isDropoffValid) {
       toast({ title: lang === 'ar' ? 'اختر نقاط الركوب والنزول' : 'Select pickup & dropoff', variant: 'destructive' });
       return;
@@ -767,19 +769,39 @@ const Dashboard = () => {
           </Link>
         </div>
         <div className="flex items-center gap-2">
-          {isAdmin && (
-            <Link to="/admin">
-              <Button variant="ghost" size="icon" className="rounded-full">
-                <Shield className="w-4 h-4" />
+          {user ? (
+            <>
+              {isAdmin && (
+                <Link to="/admin">
+                  <Button variant="ghost" size="icon" className="rounded-full">
+                    <Shield className="w-4 h-4" />
+                  </Button>
+                </Link>
+              )}
+              <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="rounded-full p-2 hover:bg-muted transition-colors">
+                <Globe className="w-4 h-4" />
+              </button>
+              <Button variant="ghost" size="icon" className="rounded-full" onClick={handleSignOut}>
+                <LogOut className="w-4 h-4" />
               </Button>
-            </Link>
+            </>
+          ) : (
+            <>
+              <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="rounded-full p-2 hover:bg-muted transition-colors">
+                <Globe className="w-4 h-4" />
+              </button>
+              <Link to="/login">
+                <Button variant="ghost" size="sm">
+                  {lang === 'ar' ? 'تسجيل الدخول' : 'Log in'}
+                </Button>
+              </Link>
+              <Link to="/signup">
+                <Button size="sm">
+                  {lang === 'ar' ? 'إنشاء حساب' : 'Sign up'}
+                </Button>
+              </Link>
+            </>
           )}
-          <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="rounded-full p-2 hover:bg-muted transition-colors">
-            <Globe className="w-4 h-4" />
-          </button>
-          <Button variant="ghost" size="icon" className="rounded-full" onClick={handleSignOut}>
-            <LogOut className="w-4 h-4" />
-          </Button>
         </div>
       </header>
 
@@ -960,12 +982,15 @@ const Dashboard = () => {
                 <p className="text-muted-foreground text-sm mb-3">
                   {lang === 'ar' ? 'لا توجد رحلات متاحة لهذا المسار' : 'No rides available for this route'}
                 </p>
-                <Button size="sm" onClick={() => navigate('/request-route', {
-                  state: {
-                    origin: pickup ? { name: pickup.name || '', lat: pickup.lat, lng: pickup.lng } : undefined,
-                    destination: dropoff ? { name: dropoff.name || '', lat: dropoff.lat, lng: dropoff.lng } : undefined,
-                  }
-                })}>{lang === 'ar' ? 'اطلب هذا المسار' : 'Request this route'}</Button>
+                <Button size="sm" onClick={() => {
+                  if (!user) { navigate('/login'); return; }
+                  navigate('/request-route', {
+                    state: {
+                      origin: pickup ? { name: pickup.name || '', lat: pickup.lat, lng: pickup.lng } : undefined,
+                      destination: dropoff ? { name: dropoff.name || '', lat: dropoff.lat, lng: dropoff.lng } : undefined,
+                    }
+                  });
+                }}>{lang === 'ar' ? 'اطلب هذا المسار' : 'Request this route'}</Button>
               </div>
             )}
           </div>
