@@ -465,7 +465,6 @@ const TrackShuttle = () => {
                     <p className="text-primary-foreground/80 text-xs">
                       {lang === 'ar' ? 'الوقت المتوقع للوصول إليك' : 'Estimated arrival to you'}
                     </p>
-                    </p>
                   </div>
                 </div>
                 {stopsBeforeYou > 0 && (
