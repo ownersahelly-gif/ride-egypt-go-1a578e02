@@ -220,6 +220,208 @@ export type Database = {
           },
         ]
       }
+      carpool_messages: {
+        Row: {
+          created_at: string
+          id: string
+          message: string
+          route_id: string
+          sender_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message: string
+          route_id: string
+          sender_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string
+          route_id?: string
+          sender_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "carpool_messages_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "carpool_routes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      carpool_requests: {
+        Row: {
+          created_at: string
+          dropoff_lat: number
+          dropoff_lng: number
+          dropoff_name: string
+          id: string
+          message: string | null
+          pickup_lat: number
+          pickup_lng: number
+          pickup_name: string
+          route_id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          dropoff_lat: number
+          dropoff_lng: number
+          dropoff_name: string
+          id?: string
+          message?: string | null
+          pickup_lat: number
+          pickup_lng: number
+          pickup_name: string
+          route_id: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          dropoff_lat?: number
+          dropoff_lng?: number
+          dropoff_name?: string
+          id?: string
+          message?: string | null
+          pickup_lat?: number
+          pickup_lng?: number
+          pickup_name?: string
+          route_id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "carpool_requests_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "carpool_routes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      carpool_routes: {
+        Row: {
+          allow_car_swap: boolean
+          available_seats: number
+          created_at: string
+          days_of_week: number[] | null
+          departure_time: string
+          destination_lat: number
+          destination_lng: number
+          destination_name: string
+          fuel_share_amount: number | null
+          id: string
+          is_daily: boolean
+          notes: string | null
+          origin_lat: number
+          origin_lng: number
+          origin_name: string
+          share_fuel: boolean
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          allow_car_swap?: boolean
+          available_seats?: number
+          created_at?: string
+          days_of_week?: number[] | null
+          departure_time: string
+          destination_lat: number
+          destination_lng: number
+          destination_name: string
+          fuel_share_amount?: number | null
+          id?: string
+          is_daily?: boolean
+          notes?: string | null
+          origin_lat: number
+          origin_lng: number
+          origin_name: string
+          share_fuel?: boolean
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          allow_car_swap?: boolean
+          available_seats?: number
+          created_at?: string
+          days_of_week?: number[] | null
+          departure_time?: string
+          destination_lat?: number
+          destination_lng?: number
+          destination_name?: string
+          fuel_share_amount?: number | null
+          id?: string
+          is_daily?: boolean
+          notes?: string | null
+          origin_lat?: number
+          origin_lng?: number
+          origin_name?: string
+          share_fuel?: boolean
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      carpool_verifications: {
+        Row: {
+          admin_notes: string | null
+          car_license_url: string | null
+          created_at: string
+          driving_license_url: string | null
+          id: string
+          id_back_url: string | null
+          id_front_url: string | null
+          license_plate: string | null
+          selfie_url: string | null
+          status: string
+          updated_at: string
+          user_id: string
+          vehicle_model: string | null
+        }
+        Insert: {
+          admin_notes?: string | null
+          car_license_url?: string | null
+          created_at?: string
+          driving_license_url?: string | null
+          id?: string
+          id_back_url?: string | null
+          id_front_url?: string | null
+          license_plate?: string | null
+          selfie_url?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+          vehicle_model?: string | null
+        }
+        Update: {
+          admin_notes?: string | null
+          car_license_url?: string | null
+          created_at?: string
+          driving_license_url?: string | null
+          id?: string
+          id_back_url?: string | null
+          id_front_url?: string | null
+          license_plate?: string | null
+          selfie_url?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+          vehicle_model?: string | null
+        }
+        Relationships: []
+      }
       driver_applications: {
         Row: {
           car_license_url: string | null

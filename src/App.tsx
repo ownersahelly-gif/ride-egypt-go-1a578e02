@@ -18,6 +18,11 @@ import DriverDashboard from "./pages/DriverDashboard.tsx";
 import TrackShuttle from "./pages/TrackShuttle.tsx";
 import ActiveRide from "./pages/ActiveRide.tsx";
 import AdminPanel from "./pages/AdminPanel.tsx";
+import Carpool from "./pages/Carpool.tsx";
+import CarpoolVerify from "./pages/CarpoolVerify.tsx";
+import CarpoolPost from "./pages/CarpoolPost.tsx";
+import CarpoolRoute from "./pages/CarpoolRoute.tsx";
+import CarpoolManage from "./pages/CarpoolManage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -44,6 +49,11 @@ const App = () => (
               <Route path="/track" element={<ProtectedRoute><TrackShuttle /></ProtectedRoute>} />
               <Route path="/active-ride" element={<ProtectedRoute><ActiveRide /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
+              <Route path="/carpool" element={<ProtectedRoute><Carpool /></ProtectedRoute>} />
+              <Route path="/carpool/verify" element={<ProtectedRoute><CarpoolVerify /></ProtectedRoute>} />
+              <Route path="/carpool/post" element={<ProtectedRoute><CarpoolPost /></ProtectedRoute>} />
+              <Route path="/carpool/route/:id" element={<ProtectedRoute><CarpoolRoute /></ProtectedRoute>} />
+              <Route path="/carpool/manage/:id" element={<ProtectedRoute><CarpoolManage /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
