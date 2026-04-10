@@ -26,6 +26,7 @@ const MapView = ({
   markers = [],
   origin,
   destination,
+  waypoints = [],
   showDirections = false,
   center,
   zoom = 12,
