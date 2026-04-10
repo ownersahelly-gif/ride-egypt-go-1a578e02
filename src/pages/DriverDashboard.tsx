@@ -253,8 +253,8 @@ const DriverDashboard = () => {
   const getExpectedEarnings = (routeObj: any) => {
     const price = parseFloat(routeObj.price || 0);
     const capacity = shuttle?.capacity || 14;
-    // Driver gets ~70% of fare
-    const driverShare = price * 0.7;
+    // Driver gets 90% of fare
+    const driverShare = price * 0.9;
     return {
       perTrip: driverShare * capacity,
       perDay: driverShare * capacity * 2, // going + return
