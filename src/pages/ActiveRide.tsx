@@ -583,7 +583,7 @@ const ActiveRide = () => {
                       </Button>
                     );
                   })()
-                  )}
+                  }
                 </div>
               )
             ) : (
