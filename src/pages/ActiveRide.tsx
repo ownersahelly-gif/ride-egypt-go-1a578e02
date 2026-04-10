@@ -556,19 +556,34 @@ const ActiveRide = () => {
                       <Clock className="w-4 h-4 me-1" />
                       {60 - waitSeconds}s
                     </Button>
-                  ) : (
-                    <Button variant="outline" onClick={() => {
-                      setArrivedAt(Date.now());
-                      setWaitSeconds(0);
-                      supabase.from('bookings').update({
-                        driver_arrived_at: new Date().toISOString(),
-                      }).eq('id', currentStop.bookingId);
-                      toast({ title: lang === 'ar' ? '⏱️ بدأ العد التنازلي — 60 ثانية' : '⏱️ Timer started — 60 seconds' });
-                    }} title={lang === 'ar' ? 'وصلت — ابدأ العد' : "I've arrived — start timer"}>
-                      <Clock className="w-4 h-4 me-1" />
-                      {lang === 'ar' ? 'وصلت' : 'Arrived'}
-                    </Button>
-                  )}
+                  ) : (() => {
+                    const isNearPickup = driverLocation
+                      ? haversineDistance(driverLocation, { lat: currentStop.lat, lng: currentStop.lng }) <= REACH_THRESHOLD_M
+                      : false;
+                    return (
+                      <Button
+                        variant="outline"
+                        disabled={!isNearPickup}
+                        onClick={() => {
+                          setArrivedAt(Date.now());
+                          setWaitSeconds(0);
+                          supabase.from('bookings').update({
+                            driver_arrived_at: new Date().toISOString(),
+                          }).eq('id', currentStop.bookingId);
+                          toast({ title: lang === 'ar' ? '⏱️ بدأ العد التنازلي — 60 ثانية' : '⏱️ Timer started — 60 seconds' });
+                        }}
+                        title={isNearPickup
+                          ? (lang === 'ar' ? 'وصلت — ابدأ العد' : "I've arrived — start timer")
+                          : (lang === 'ar' ? `يجب أن تكون على بعد ${REACH_THRESHOLD_M}م` : `Must be within ${REACH_THRESHOLD_M}m`)}
+                      >
+                        <Clock className="w-4 h-4 me-1" />
+                        {isNearPickup
+                          ? (lang === 'ar' ? 'وصلت' : 'Arrived')
+                          : (lang === 'ar' ? 'بعيد' : 'Too far')}
+                      </Button>
+                    );
+                  })()
+                  }
                 </div>
               )
             ) : (

@@ -9,6 +9,7 @@ import MapView from '@/components/MapView';
 import PlacesAutocomplete from '@/components/PlacesAutocomplete';
 import BottomNav from '@/components/BottomNav';
 import { useBookingNotifications } from '@/hooks/useBookingNotifications';
+import { useRideMessageNotifications } from '@/hooks/useRideMessageNotifications';
 import {
   MapPin, Clock, Users, ArrowRight, Calendar, AlertCircle, Car,
   User as UserIcon, Loader2, CheckCircle2, XCircle, Navigation,
@@ -49,6 +50,7 @@ type PointSelection = { lat: number; lng: number; name: string } | null;
 
 const Dashboard = () => {
   useBookingNotifications();
+  useRideMessageNotifications();
   const { user, signOut } = useAuth();
   const { t, lang, setLang } = useLanguage();
   const navigate = useNavigate();

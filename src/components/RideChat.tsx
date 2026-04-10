@@ -13,6 +13,22 @@ interface RideChatProps {
   onClose: () => void;
 }
 
+const playMsgSound = () => {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(660, ctx.currentTime);
+    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.3);
+  } catch { /* Audio not available */ }
+};
+
 const RideChat = ({ bookingId, otherName, isOpen, onClose }: RideChatProps) => {
   const { user } = useAuth();
   const { lang } = useLanguage();
@@ -40,12 +56,21 @@ const RideChat = ({ bookingId, otherName, isOpen, onClose }: RideChatProps) => {
         table: 'ride_messages',
         filter: `booking_id=eq.${bookingId}`,
       }, (payload) => {
-        setMessages((prev) => [...prev, payload.new]);
+        const newMessage = payload.new as any;
+        setMessages((prev) => {
+          // Deduplicate by id
+          if (prev.some(m => m.id === newMessage.id)) return prev;
+          return [...prev, newMessage];
+        });
+        // Play sound for incoming messages (not own)
+        if (newMessage.sender_id !== user?.id) {
+          playMsgSound();
+        }
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [isOpen, bookingId]);
+  }, [isOpen, bookingId, user?.id]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });

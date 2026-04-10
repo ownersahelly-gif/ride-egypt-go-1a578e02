@@ -10,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { Globe, LogOut, User, MapPin, Clock, Users, Car, Calendar, DollarSign, Navigation, CheckCircle2, XCircle, Loader2, Play, Plus, Trash2, Repeat, TrendingUp, Route, ArrowRight, AlertCircle, Info, ChevronDown, ChevronUp, MessageCircle } from 'lucide-react';
 import { useDriverBookingNotifications } from '@/hooks/useBookingNotifications';
+import { useRideMessageNotifications } from '@/hooks/useRideMessageNotifications';
 import PlacesAutocomplete from '@/components/PlacesAutocomplete';
 import MapView from '@/components/MapView';
 import RideChat from '@/components/RideChat';
@@ -68,6 +69,7 @@ const DriverDashboard = () => {
   const [savingQuickAdd, setSavingQuickAdd] = useState(false);
 
   const { newBookingsCount, acknowledge: ackBookings } = useDriverBookingNotifications(shuttle?.id || null);
+  useRideMessageNotifications();
 
   const dayNames = lang === 'ar'
     ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
