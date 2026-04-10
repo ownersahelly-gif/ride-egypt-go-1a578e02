@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import BottomNav from '@/components/BottomNav';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -328,6 +329,8 @@ const MyBookings = () => {
           onRated={() => setRatedBookingIds(prev => new Set([...prev, ratingBooking.id]))}
         />
       )}
+      <div className="h-20" />
+      <BottomNav />
     </div>
   );
 };

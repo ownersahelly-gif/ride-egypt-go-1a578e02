@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import BottomNav from '@/components/BottomNav';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -170,6 +171,8 @@ const RequestRoute = () => {
           </Button>
         </form>
       </main>
+      <div className="h-20" />
+      <BottomNav />
     </div>
   );
 };

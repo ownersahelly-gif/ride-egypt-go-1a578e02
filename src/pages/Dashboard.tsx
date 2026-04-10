@@ -1,209 +1,941 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { MapPin, Clock, Ticket, Plus, LogOut, Globe, User, Navigation, Shield, Car, Phone, Users, Star } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import MapView from '@/components/MapView';
+import PlacesAutocomplete from '@/components/PlacesAutocomplete';
+import BottomNav from '@/components/BottomNav';
 import { useBookingNotifications } from '@/hooks/useBookingNotifications';
+import {
+  MapPin, Clock, Users, ArrowRight, Calendar, AlertCircle, Car,
+  User as UserIcon, Loader2, CheckCircle2, XCircle, Navigation,
+  Upload, Image as ImageIcon, ListOrdered, Phone, History, Package,
+  Bookmark, Globe, LogOut, Shield, ChevronLeft, ChevronRight
+} from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+
+const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+
+/** Haversine distance in km */
+const haversineDistanceKm = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+  const toRad = (d: number) => d * Math.PI / 180;
+  const R = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+};
+
+/** Check if a point is close to the route polyline */
+const isPointOnRoute = (point: { lat: number; lng: number }, routeResult: any): boolean => {
+  if (!routeResult || typeof google === 'undefined' || !google?.maps) return false;
+  const path = routeResult.routes[0]?.overview_path;
+  if (!path) return false;
+  const pt = new google.maps.LatLng(point.lat, point.lng);
+  const isOnPoly = google.maps.geometry?.poly?.isLocationOnEdge(pt, new google.maps.Polyline({ path }), 5e-4);
+  if (isOnPoly) return true;
+  for (const p of path) {
+    const dist = google.maps.geometry?.spherical?.computeDistanceBetween(pt, p);
+    if (dist !== undefined && dist < 80) return true;
+  }
+  return false;
+};
+
+/** Calculate driving-time deviation */
+const calcDeviation = (
+  prevStop: { lat: number; lng: number },
+  nextStop: { lat: number; lng: number },
+  customPoint: { lat: number; lng: number },
+): Promise<number> => {
+  if (typeof google === 'undefined' || !google?.maps?.DirectionsService) return Promise.resolve(999);
+  const ds = new google.maps.DirectionsService();
+  const directReq = (): Promise<number> =>
+    new Promise((res) =>
+      ds.route(
+        { origin: prevStop, destination: nextStop, travelMode: google.maps.TravelMode.DRIVING },
+        (r, s) => res(s === 'OK' && r ? (r.routes[0]?.legs[0]?.duration?.value ?? 0) : 0),
+      ),
+    );
+  const detourReq = (): Promise<number> =>
+    new Promise((res) =>
+      ds.route(
+        {
+          origin: prevStop,
+          destination: nextStop,
+          waypoints: [{ location: customPoint, stopover: true }],
+          travelMode: google.maps.TravelMode.DRIVING,
+        },
+        (r, s) => {
+          if (s !== 'OK' || !r) return res(99999);
+          const legs = r.routes[0]?.legs ?? [];
+          res(legs.reduce((sum, l) => sum + (l.duration?.value ?? 0), 0));
+        },
+      ),
+    );
+  return Promise.all([directReq(), detourReq()]).then(([direct, detour]) => (detour - direct) / 60);
+};
+
+type PointSelection = { lat: number; lng: number; name: string } | null;
 
 const Dashboard = () => {
   useBookingNotifications();
   const { user, signOut } = useAuth();
   const { t, lang, setLang } = useLanguage();
   const navigate = useNavigate();
-  const [bookings, setBookings] = useState<any[]>([]);
-  const [driverProfiles, setDriverProfiles] = useState<Record<string, any>>({});
-  const [profile, setProfile] = useState<any>(null);
+  const { toast } = useToast();
+  const Back = lang === 'ar' ? ChevronRight : ChevronLeft;
+
   const [isAdmin, setIsAdmin] = useState(false);
   const [isDriver, setIsDriver] = useState(false);
+  const [profile, setProfile] = useState<any>(null);
 
+  // Booking flow state
+  const [step, setStep] = useState<'search' | 'results' | 'details'>('search');
+  const [pickup, setPickup] = useState<PointSelection>(null);
+  const [dropoff, setDropoff] = useState<PointSelection>(null);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [pricePerKm, setPricePerKm] = useState(5);
+
+  // Ride instances
+  const [rideInstances, setRideInstances] = useState<any[]>([]);
+  const [loadingRides, setLoadingRides] = useState(false);
+  const [selectedRide, setSelectedRide] = useState<any>(null);
+  const [driverProfile, setDriverProfile] = useState<any>(null);
+  const [shuttleInfo, setShuttleInfo] = useState<any>(null);
+
+  // Detail step states
+  const [pickupMode, setPickupMode] = useState<'start' | 'nearby'>('start');
+  const [customPickup, setCustomPickup] = useState<PointSelection>(null);
+  const [validatingPickup, setValidatingPickup] = useState(false);
+  const [pickupResult, setPickupResult] = useState<{ ok: boolean; minutes: number; onRoute: boolean } | null>(null);
+  const [dropoffMode, setDropoffMode] = useState<'end' | 'nearby'>('end');
+  const [customDropoff, setCustomDropoff] = useState<PointSelection>(null);
+  const [validatingDropoff, setValidatingDropoff] = useState(false);
+  const [dropoffResult, setDropoffResult] = useState<{ ok: boolean; minutes: number; onRoute: boolean } | null>(null);
+  const [mapClickTarget, setMapClickTarget] = useState<'pickup' | 'dropoff'>('pickup');
+  const [tripDirection, setTripDirection] = useState<'go' | 'return' | 'both'>('both');
+  const [routeDirections, setRouteDirections] = useState<any>(null);
+
+  // Saved locations & bundles
+  const [savedLocations, setSavedLocations] = useState<any[]>([]);
+  const [availableBundles, setAvailableBundles] = useState<any[]>([]);
+  const [activeBundlePurchase, setActiveBundlePurchase] = useState<any>(null);
+  const [useBundle, setUseBundle] = useState(false);
+  const [showBundleSection, setShowBundleSection] = useState(false);
+
+  // Payment
+  const [paymentProof, setPaymentProof] = useState<File | null>(null);
+  const [paymentPreview, setPaymentPreview] = useState<string | null>(null);
+  const [uploadingProof, setUploadingProof] = useState(false);
+  const [instapayPhone, setInstapayPhone] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Estimated price from pickup/dropoff distance
+  const estimatedPrice = pickup && dropoff
+    ? Math.max(10, Math.round(haversineDistanceKm(pickup, dropoff) * pricePerKm))
+    : null;
+
+  // Fetch user profile, roles, settings
   useEffect(() => {
     if (!user) return;
     const fetchData = async () => {
-      const [{ data: profileData }, { data: bookingsData }, { data: rolesData }] = await Promise.all([
+      const [{ data: profileData }, { data: rolesData }, { data: settingsData }] = await Promise.all([
         supabase.from('profiles').select('*').eq('user_id', user.id).single(),
-        supabase.from('bookings').select('*, routes(*), shuttles(*)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
         supabase.from('user_roles').select('role').eq('user_id', user.id),
+        supabase.from('app_settings').select('value').eq('key', 'price_per_km').single(),
       ]);
       setProfile(profileData);
-      setBookings(bookingsData || []);
+      if (settingsData?.value) setPricePerKm(parseFloat(settingsData.value));
       const roles = (rolesData || []).map(r => r.role);
       setIsAdmin(roles.includes('admin'));
       const driverFlag = profileData?.user_type === 'driver' || roles.includes('moderator');
       setIsDriver(driverFlag);
-      if (driverFlag) {
-        navigate('/driver-dashboard');
-        return;
-      }
-
-      // Fetch driver profiles for bookings
-      const driverIds = [...new Set((bookingsData || []).map((b: any) => b.shuttles?.driver_id).filter(Boolean))];
-      if (driverIds.length > 0) {
-        const { data: profiles } = await supabase.from('profiles').select('user_id, full_name, phone').in('user_id', driverIds);
-        const map: Record<string, any> = {};
-        (profiles || []).forEach(p => { map[p.user_id] = p; });
-        setDriverProfiles(map);
-      }
+      if (driverFlag) { navigate('/driver-dashboard'); return; }
     };
     fetchData();
+
+    supabase.from('app_settings').select('value').eq('key', 'instapay_phone').single()
+      .then(({ data }) => { if (data) setInstapayPhone(data.value); });
   }, [user]);
 
-  const handleSignOut = async () => {
-    await signOut();
-    navigate('/');
+  // Date options
+  const getDateOptions = () => {
+    const options: { label: string; date: string }[] = [];
+    const today = new Date();
+    const dayNames = lang === 'ar'
+      ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+      : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(today);
+      d.setDate(today.getDate() + i);
+      const dateStr = d.toISOString().split('T')[0];
+      let label = '';
+      if (i === 0) label = lang === 'ar' ? 'اليوم' : 'Today';
+      else if (i === 1) label = lang === 'ar' ? 'غداً' : 'Tomorrow';
+      else label = `${dayNames[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`;
+      options.push({ label, date: dateStr });
+    }
+    return options;
   };
 
-  const statusColors: Record<string, string> = {
-    pending: 'bg-secondary/20 text-secondary',
-    confirmed: 'bg-green-100 text-green-700',
-    completed: 'bg-muted text-muted-foreground',
-    cancelled: 'bg-destructive/10 text-destructive',
+  // Search for rides when user has both pickup + dropoff
+  const searchRides = async () => {
+    if (!pickup || !dropoff) return;
+    setLoadingRides(true);
+    setStep('results');
+
+    const { data } = await supabase
+      .from('ride_instances')
+      .select('*, routes(name_en, name_ar, origin_name_en, origin_name_ar, destination_name_en, destination_name_ar, price, estimated_duration_minutes, origin_lat, origin_lng, destination_lat, destination_lng)')
+      .eq('ride_date', selectedDate)
+      .eq('status', 'scheduled')
+      .order('departure_time');
+
+    if (data && data.length > 0) {
+      // Filter rides where pickup is near origin and dropoff is near destination (within 10km)
+      const matchedRides = data.filter(ri => {
+        const route = ri.routes;
+        if (!route) return false;
+        const pickupToOrigin = haversineDistanceKm(pickup, { lat: route.origin_lat, lng: route.origin_lng });
+        const pickupToDest = haversineDistanceKm(pickup, { lat: route.destination_lat, lng: route.destination_lng });
+        const dropoffToOrigin = haversineDistanceKm(dropoff, { lat: route.origin_lat, lng: route.origin_lng });
+        const dropoffToDest = haversineDistanceKm(dropoff, { lat: route.destination_lat, lng: route.destination_lng });
+
+        // Match "go" direction: pickup near origin, dropoff near destination
+        const goMatch = pickupToOrigin < 10 && dropoffToDest < 10;
+        // Match "return" direction: pickup near destination, dropoff near origin
+        const returnMatch = pickupToDest < 10 && dropoffToOrigin < 10;
+        return goMatch || returnMatch;
+      });
+
+      // Enrich with driver/shuttle info
+      const driverIds = [...new Set(matchedRides.map(r => r.driver_id))];
+      const shuttleIds = [...new Set(matchedRides.map(r => r.shuttle_id))];
+      const [{ data: profiles }, { data: shuttles }] = await Promise.all([
+        driverIds.length > 0 ? supabase.from('profiles').select('user_id, full_name, avatar_url, phone').in('user_id', driverIds) : { data: [] },
+        shuttleIds.length > 0 ? supabase.from('shuttles').select('id, vehicle_model, vehicle_plate, capacity').in('id', shuttleIds) : { data: [] },
+      ]);
+      const pMap: Record<string, any> = {};
+      (profiles || []).forEach(p => { pMap[p.user_id] = p; });
+      const sMap: Record<string, any> = {};
+      (shuttles || []).forEach(s => { sMap[s.id] = s; });
+      setRideInstances(matchedRides.map(r => ({ ...r, driver_profile: pMap[r.driver_id], shuttle_info: sMap[r.shuttle_id] })));
+    } else {
+      setRideInstances([]);
+    }
+    setLoadingRides(false);
+  };
+
+  // Route directions for on-route checking
+  useEffect(() => {
+    if (!selectedRide?.routes || typeof google === 'undefined' || !google?.maps?.DirectionsService) { setRouteDirections(null); return; }
+    const ds = new google.maps.DirectionsService();
+    ds.route({
+      origin: { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng },
+      destination: { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng },
+      travelMode: google.maps.TravelMode.DRIVING,
+    }, (result, status) => {
+      if (status === 'OK' && result) setRouteDirections(result);
+    });
+  }, [selectedRide?.route_id]);
+
+  const selectRide = async (ride: any) => {
+    setSelectedRide(ride);
+    setDriverProfile(ride.driver_profile);
+    setShuttleInfo(ride.shuttle_info);
+    setCustomPickup(null);
+    setCustomDropoff(null);
+    setPickupResult(null);
+    setDropoffResult(null);
+    setPickupMode('start');
+    setDropoffMode('end');
+    setUseBundle(false);
+    setTripDirection('both');
+    setStep('details');
+
+    if (user && ride.route_id) {
+      const [{ data: savedLocs }, { data: bundles }, { data: purchases }] = await Promise.all([
+        supabase.from('saved_locations').select('*').eq('user_id', user.id).eq('route_id', ride.route_id).order('use_count', { ascending: false }).limit(5),
+        supabase.from('ride_bundles').select('*').eq('route_id', ride.route_id).eq('is_active', true),
+        supabase.from('bundle_purchases').select('*').eq('user_id', user.id).eq('route_id', ride.route_id).eq('status', 'active').gt('rides_remaining', 0).gt('expires_at', new Date().toISOString()).limit(1),
+      ]);
+      setSavedLocations(savedLocs || []);
+      setAvailableBundles(bundles || []);
+      setActiveBundlePurchase(purchases?.[0] || null);
+    }
+  };
+
+  // Validate custom point
+  const validateCustomPoint = useCallback(async (
+    point: { lat: number; lng: number; name: string },
+    type: 'pickup' | 'dropoff',
+  ) => {
+    if (!selectedRide?.routes) return;
+    const setValidating = type === 'pickup' ? setValidatingPickup : setValidatingDropoff;
+    const setResult = type === 'pickup' ? setPickupResult : setDropoffResult;
+    const setCustom = type === 'pickup' ? setCustomPickup : setCustomDropoff;
+    setValidating(true);
+    setResult(null);
+    setCustom(point);
+    const onRoute = isPointOnRoute(point, routeDirections);
+    if (onRoute) { setResult({ ok: true, minutes: 0, onRoute: true }); setValidating(false); return; }
+    const origin = { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng };
+    const dest = { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng };
+    try {
+      const deviation = await calcDeviation(origin, dest, point);
+      const ok = deviation <= 5;
+      setResult({ ok, minutes: Math.round(deviation * 10) / 10, onRoute: false });
+      if (!ok) {
+        toast({
+          title: lang === 'ar' ? 'موقع بعيد عن المسار' : 'Too far from route',
+          description: lang === 'ar'
+            ? `هذا الموقع سيضيف ${Math.round(deviation)} دقائق إنحراف (الحد الأقصى 5 دقائق)`
+            : `This location adds ${Math.round(deviation)} min deviation (max 5 min allowed)`,
+          variant: 'destructive',
+        });
+      }
+    } catch {
+      setResult({ ok: false, minutes: 99, onRoute: false });
+    }
+    setValidating(false);
+  }, [selectedRide, routeDirections, lang, toast]);
+
+  const handleMapClick = useCallback((lat: number, lng: number) => {
+    if (step !== 'details') return;
+    const target = (pickupMode === 'nearby' && mapClickTarget === 'pickup') ? 'pickup'
+      : (dropoffMode === 'nearby' && mapClickTarget === 'dropoff') ? 'dropoff'
+      : (pickupMode === 'nearby') ? 'pickup'
+      : (dropoffMode === 'nearby') ? 'dropoff'
+      : null;
+    if (!target) return;
+    if (typeof google !== 'undefined') {
+      const geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+        const name = status === 'OK' && results?.[0] ? results[0].formatted_address : `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+        validateCustomPoint({ lat, lng, name }, target);
+      });
+    } else {
+      validateCustomPoint({ lat, lng, name: `${lat.toFixed(4)}, ${lng.toFixed(4)}` }, target);
+    }
+  }, [step, pickupMode, dropoffMode, mapClickTarget, validateCustomPoint]);
+
+  const isPickupValid = pickupMode === 'start' ? true : (!!customPickup && pickupResult?.ok === true);
+  const isDropoffValid = dropoffMode === 'end' ? true : (!!customDropoff && dropoffResult?.ok === true);
+
+  // Dynamic price calculation using price_per_km
+  const calcDynamicPrice = useCallback(() => {
+    if (!selectedRide?.routes) return 0;
+    const route = selectedRide.routes;
+    const pLat = pickupMode === 'start' ? route.origin_lat : (customPickup?.lat ?? route.origin_lat);
+    const pLng = pickupMode === 'start' ? route.origin_lng : (customPickup?.lng ?? route.origin_lng);
+    const dLat = dropoffMode === 'end' ? route.destination_lat : (customDropoff?.lat ?? route.destination_lat);
+    const dLng = dropoffMode === 'end' ? route.destination_lng : (customDropoff?.lng ?? route.destination_lng);
+    const distKm = haversineDistanceKm({ lat: pLat, lng: pLng }, { lat: dLat, lng: dLng });
+    return Math.max(10, Math.round(distKm * pricePerKm));
+  }, [selectedRide, pickupMode, dropoffMode, customPickup, customDropoff, pricePerKm]);
+
+  const dynamicPrice = calcDynamicPrice();
+
+  const isRideFull = selectedRide?.available_seats === 0;
+  const isNearbyMode = pickupMode === 'nearby' || dropoffMode === 'nearby';
+
+  // Payment file handler
+  const handlePaymentFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: lang === 'ar' ? 'الملف كبير جداً' : 'File too large', variant: 'destructive' });
+      return;
+    }
+    setPaymentProof(file);
+    setPaymentPreview(URL.createObjectURL(file));
+  };
+
+  // Handle sign out
+  const handleSignOut = async () => { await signOut(); navigate('/'); };
+
+  // Booking handler
+  const handleBook = async (asWaitlist = false) => {
+    if (!user || !selectedRide) return;
+    if (!isPickupValid || !isDropoffValid) {
+      toast({ title: lang === 'ar' ? 'اختر نقاط الركوب والنزول' : 'Select pickup & dropoff', variant: 'destructive' });
+      return;
+    }
+    const usingBundle = useBundle && activeBundlePurchase;
+    if (!asWaitlist && !usingBundle && !paymentProof) {
+      toast({ title: lang === 'ar' ? 'أرفق إثبات الدفع' : 'Attach payment proof', variant: 'destructive' });
+      return;
+    }
+    if (!asWaitlist && selectedRide.available_seats < 1) {
+      toast({ title: lang === 'ar' ? 'لا توجد مقاعد' : 'No seats available', variant: 'destructive' });
+      return;
+    }
+    setLoading(true);
+    try {
+      let proofUrl: string | null = null;
+      if (paymentProof && !usingBundle) {
+        setUploadingProof(true);
+        const ext = paymentProof.name.split('.').pop();
+        const filePath = `${user.id}/${Date.now()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage.from('instapay-proofs').upload(filePath, paymentProof);
+        if (uploadErr) throw uploadErr;
+        const { data: urlData } = supabase.storage.from('instapay-proofs').getPublicUrl(filePath);
+        proofUrl = urlData?.publicUrl || filePath;
+        setUploadingProof(false);
+      }
+
+      let waitlistPos: number | null = null;
+      if (asWaitlist) {
+        const { data: existingWaitlist } = await supabase
+          .from('bookings').select('waitlist_position')
+          .eq('route_id', selectedRide.route_id).eq('scheduled_date', selectedRide.ride_date)
+          .eq('scheduled_time', selectedRide.departure_time).eq('status', 'waitlist')
+          .order('waitlist_position', { ascending: false }).limit(1);
+        waitlistPos = ((existingWaitlist?.[0]?.waitlist_position as number) || 0) + 1;
+      }
+
+      const route = selectedRide.routes;
+      const pickupLat = pickupMode === 'start' ? route.origin_lat : customPickup?.lat;
+      const pickupLng = pickupMode === 'start' ? route.origin_lng : customPickup?.lng;
+      const pickupName = pickupMode === 'start' ? (lang === 'ar' ? route.origin_name_ar : route.origin_name_en) : customPickup?.name;
+      const dropoffLat = dropoffMode === 'end' ? route.destination_lat : customDropoff?.lat;
+      const dropoffLng = dropoffMode === 'end' ? route.destination_lng : customDropoff?.lng;
+      const dropoffName = dropoffMode === 'end' ? (lang === 'ar' ? route.destination_name_ar : route.destination_name_en) : customDropoff?.name;
+
+      const basePrice = dynamicPrice;
+      const totalPrice = usingBundle ? 0 : (tripDirection === 'both' ? basePrice * 2 : basePrice);
+
+      const { error } = await supabase.from('bookings').insert({
+        user_id: user.id,
+        route_id: selectedRide.route_id,
+        shuttle_id: selectedRide.shuttle_id,
+        seats: 1,
+        total_price: totalPrice,
+        scheduled_date: selectedRide.ride_date,
+        scheduled_time: selectedRide.departure_time,
+        status: asWaitlist ? 'waitlist' : (usingBundle ? 'confirmed' : 'pending'),
+        payment_proof_url: proofUrl,
+        waitlist_position: waitlistPos,
+        custom_pickup_lat: pickupLat,
+        custom_pickup_lng: pickupLng,
+        custom_pickup_name: pickupName,
+        custom_dropoff_lat: dropoffLat,
+        custom_dropoff_lng: dropoffLng,
+        custom_dropoff_name: dropoffName,
+        trip_direction: tripDirection,
+      });
+      if (error) throw error;
+
+      if (usingBundle && activeBundlePurchase) {
+        await supabase.from('bundle_purchases').update({
+          rides_remaining: activeBundlePurchase.rides_remaining - 1,
+        }).eq('id', activeBundlePurchase.id);
+      }
+
+      if (!asWaitlist) {
+        await supabase.from('ride_instances').update({
+          available_seats: selectedRide.available_seats - 1,
+        }).eq('id', selectedRide.id);
+      }
+
+      // Save location
+      if (user && selectedRide.route_id) {
+        const existing = savedLocations.find(sl =>
+          sl.pickup_lat === pickupLat && sl.pickup_lng === pickupLng &&
+          sl.dropoff_lat === dropoffLat && sl.dropoff_lng === dropoffLng
+        );
+        if (existing) {
+          await supabase.from('saved_locations').update({ use_count: existing.use_count + 1 }).eq('id', existing.id);
+        } else {
+          await supabase.from('saved_locations').insert({
+            user_id: user.id, route_id: selectedRide.route_id,
+            pickup_lat: pickupLat, pickup_lng: pickupLng, pickup_name: pickupName,
+            dropoff_lat: dropoffLat, dropoff_lng: dropoffLng, dropoff_name: dropoffName,
+            label: `${pickupName} → ${dropoffName}`,
+          });
+        }
+      }
+
+      toast({
+        title: asWaitlist
+          ? (lang === 'ar' ? 'تم إضافتك لقائمة الانتظار' : 'Added to waitlist')
+          : usingBundle ? (lang === 'ar' ? 'تم الحجز من الباقة' : 'Booked from bundle')
+          : (lang === 'ar' ? 'تم الحجز بنجاح' : 'Booking submitted'),
+      });
+      navigate('/my-bookings');
+    } catch (error: any) {
+      toast({ title: t('auth.error'), description: error.message, variant: 'destructive' });
+    } finally {
+      setLoading(false);
+      setUploadingProof(false);
+    }
+  };
+
+  // Buy bundle
+  const handleBuyBundle = async (bundle: any) => {
+    if (!user || !paymentProof) {
+      toast({ title: lang === 'ar' ? 'أرفق إثبات الدفع' : 'Attach payment proof', variant: 'destructive' });
+      return;
+    }
+    setLoading(true);
+    try {
+      let proofUrl: string | null = null;
+      if (paymentProof) {
+        const ext = paymentProof.name.split('.').pop();
+        const filePath = `${user.id}/bundle_${Date.now()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage.from('instapay-proofs').upload(filePath, paymentProof);
+        if (uploadErr) throw uploadErr;
+        const { data: urlData } = supabase.storage.from('instapay-proofs').getPublicUrl(filePath);
+        proofUrl = urlData?.publicUrl || filePath;
+      }
+      const expiresAt = new Date();
+      if (bundle.bundle_type === 'weekly') expiresAt.setDate(expiresAt.getDate() + 7);
+      else expiresAt.setDate(expiresAt.getDate() + 30);
+      const { error } = await supabase.from('bundle_purchases').insert({
+        user_id: user.id, bundle_id: bundle.id, route_id: bundle.route_id,
+        rides_remaining: bundle.ride_count, rides_total: bundle.ride_count,
+        expires_at: expiresAt.toISOString(), status: 'active', payment_proof_url: proofUrl,
+      });
+      if (error) throw error;
+      toast({ title: lang === 'ar' ? 'تم شراء الباقة!' : 'Bundle purchased!' });
+      const { data: purchases } = await supabase.from('bundle_purchases').select('*')
+        .eq('user_id', user.id).eq('route_id', bundle.route_id).eq('status', 'active')
+        .gt('rides_remaining', 0).gt('expires_at', new Date().toISOString()).limit(1);
+      setActiveBundlePurchase(purchases?.[0] || null);
+      setPaymentProof(null); setPaymentPreview(null); setShowBundleSection(false);
+    } catch (error: any) {
+      toast({ title: t('auth.error'), description: error.message, variant: 'destructive' });
+    } finally { setLoading(false); }
+  };
+
+  // Apply saved location
+  const applySavedLocation = (saved: any) => {
+    if (saved.pickup_lat && saved.pickup_lng) {
+      const isDefault = saved.pickup_lat === selectedRide?.routes?.origin_lat && saved.pickup_lng === selectedRide?.routes?.origin_lng;
+      if (isDefault) { setPickupMode('start'); setCustomPickup(null); setPickupResult(null); }
+      else { setPickupMode('nearby'); setCustomPickup({ lat: saved.pickup_lat, lng: saved.pickup_lng, name: saved.pickup_name }); setPickupResult({ ok: true, minutes: 0, onRoute: true }); }
+    }
+    if (saved.dropoff_lat && saved.dropoff_lng) {
+      const isDefault = saved.dropoff_lat === selectedRide?.routes?.destination_lat && saved.dropoff_lng === selectedRide?.routes?.destination_lng;
+      if (isDefault) { setDropoffMode('end'); setCustomDropoff(null); setDropoffResult(null); }
+      else { setDropoffMode('nearby'); setCustomDropoff({ lat: saved.dropoff_lat, lng: saved.dropoff_lng, name: saved.dropoff_name }); setDropoffResult({ ok: true, minutes: 0, onRoute: true }); }
+    }
+    toast({ title: lang === 'ar' ? 'تم تطبيق الموقع المحفوظ' : 'Saved location applied' });
+  };
+
+  const dateOptions = getDateOptions();
+
+  // Map markers
+  const mapMarkers: { lat: number; lng: number; label?: string; color?: 'red' | 'green' | 'blue' }[] = [];
+  if (step === 'search') {
+    if (pickup) mapMarkers.push({ lat: pickup.lat, lng: pickup.lng, label: 'A', color: 'green' });
+    if (dropoff) mapMarkers.push({ lat: dropoff.lat, lng: dropoff.lng, label: 'B', color: 'red' });
+  }
+  if (step === 'details' && selectedRide?.routes) {
+    mapMarkers.push(
+      { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng, label: 'A', color: 'green' },
+      { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng, label: 'B', color: 'red' },
+    );
+    if (customPickup && pickupMode === 'nearby') mapMarkers.push({ lat: customPickup.lat, lng: customPickup.lng, label: '📍', color: 'green' });
+    if (customDropoff && dropoffMode === 'nearby') mapMarkers.push({ lat: customDropoff.lat, lng: customDropoff.lng, label: '📍', color: 'red' });
+  }
+
+  // Point selector renderer
+  const renderPointSelector = (
+    type: 'pickup' | 'dropoff',
+    mode: 'start' | 'end' | 'nearby',
+    setMode: (m: any) => void,
+    customPoint: PointSelection,
+    validating: boolean,
+    result: { ok: boolean; minutes: number; onRoute: boolean } | null,
+  ) => {
+    const isPickupType = type === 'pickup';
+    const startLabel = isPickupType ? (lang === 'ar' ? '🚏 نقطة الانطلاق' : '🚏 Starting Point') : (lang === 'ar' ? '🏁 نقطة الوصول' : '🏁 End Point');
+    const nearbyLabel = lang === 'ar' ? '🗺️ موقع قريب (≤5 د)' : '🗺️ Nearby (≤5 min)';
+    const isStartMode = mode === 'start' || mode === 'end';
+
+    return (
+      <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+        <h3 className="font-semibold text-foreground flex items-center gap-1 text-sm">
+          <MapPin className={`w-4 h-4 ${isPickupType ? 'text-green-500' : 'text-destructive'}`} />
+          {isPickupType ? (lang === 'ar' ? 'نقطة الركوب' : 'Pickup') : (lang === 'ar' ? 'نقطة النزول' : 'Dropoff')}
+        </h3>
+        <div className="flex gap-2">
+          <button onClick={() => {
+            if (isPickupType) { setMode('start'); setCustomPickup(null); setPickupResult(null); }
+            else { setMode('end'); setCustomDropoff(null); setDropoffResult(null); }
+          }} className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${isStartMode ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}>
+            {startLabel}
+          </button>
+          <button onClick={() => {
+            setMode('nearby'); setMapClickTarget(type);
+            if (isPickupType) { setCustomPickup(null); setPickupResult(null); }
+            else { setCustomDropoff(null); setDropoffResult(null); }
+          }} className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${mode === 'nearby' ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}>
+            {nearbyLabel}
+          </button>
+        </div>
+
+        {isStartMode && (
+          <div className="flex items-center gap-2 text-sm p-3 rounded-lg bg-green-50 text-green-700">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <p className="font-medium text-xs">
+              {isPickupType ? (lang === 'ar' ? selectedRide?.routes?.origin_name_ar : selectedRide?.routes?.origin_name_en) : (lang === 'ar' ? selectedRide?.routes?.destination_name_ar : selectedRide?.routes?.destination_name_en)}
+            </p>
+          </div>
+        )}
+
+        {mode === 'nearby' && (
+          <div className="space-y-2">
+            <PlacesAutocomplete
+              placeholder={isPickupType ? (lang === 'ar' ? 'ابحث عن موقع الركوب...' : 'Search pickup...') : (lang === 'ar' ? 'ابحث عن موقع النزول...' : 'Search dropoff...')}
+              onSelect={(place) => { setMapClickTarget(type); validateCustomPoint({ lat: place.lat, lng: place.lng, name: place.name }, type); }}
+              iconColor={isPickupType ? 'text-green-500' : 'text-destructive'}
+            />
+            {validating && <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="w-3 h-3 animate-spin" />{lang === 'ar' ? 'جاري التحقق...' : 'Checking...'}</div>}
+            {customPoint && result && (
+              <div className={`flex items-center gap-2 text-xs p-2 rounded-lg ${result.ok ? 'bg-green-50 text-green-700' : 'bg-destructive/10 text-destructive'}`}>
+                {result.ok ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                <span className="font-medium">{customPoint.name}</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
-    <div className="min-h-screen bg-surface">
-      {/* Header */}
-      <header className="bg-card border-b border-border sticky top-0 z-40">
-        <div className="container mx-auto flex items-center justify-between h-16 px-4">
-          <Link to="/" className="text-2xl font-bold text-primary font-arabic">
+    <div className="h-screen flex flex-col relative">
+      {/* Full-screen map background */}
+      <div className="absolute inset-0 z-0">
+        <MapView
+          className="h-full w-full rounded-none"
+          markers={mapMarkers}
+          origin={step === 'details' && selectedRide?.routes ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng } : (pickup && dropoff ? pickup : undefined)}
+          destination={step === 'details' && selectedRide?.routes ? { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng } : (pickup && dropoff ? dropoff : undefined)}
+          showDirections={step === 'details' ? !!selectedRide?.routes : (!!pickup && !!dropoff)}
+          zoom={12}
+          showUserLocation={step === 'search'}
+          onMapClick={step === 'details' && isNearbyMode ? handleMapClick : undefined}
+        />
+      </div>
+
+      {/* Top bar */}
+      <header className="relative z-10 flex items-center justify-between px-4 pt-3">
+        <div className="flex items-center gap-2">
+          {step !== 'search' && (
+            <Button variant="secondary" size="icon" className="rounded-full shadow-lg bg-card/90 backdrop-blur-sm" onClick={() => {
+              if (step === 'details') { setStep('results'); setSelectedRide(null); setRouteDirections(null); }
+              else { setStep('search'); setRideInstances([]); }
+            }}>
+              <Back className="w-5 h-5" />
+            </Button>
+          )}
+          <Link to="/" className="text-xl font-bold text-primary bg-card/90 backdrop-blur-sm rounded-full px-4 py-2 shadow-lg font-arabic">
             {lang === 'ar' ? 'مسار' : 'Massar'}
           </Link>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="p-2 text-muted-foreground hover:text-foreground">
-              <Globe className="w-5 h-5" />
-            </button>
-            <Link to="/profile">
-              <Button variant="ghost" size="icon"><User className="w-5 h-5" /></Button>
+        </div>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <Link to="/admin">
+              <Button variant="secondary" size="icon" className="rounded-full shadow-lg bg-card/90 backdrop-blur-sm">
+                <Shield className="w-4 h-4" />
+              </Button>
             </Link>
-            <Button variant="ghost" size="icon" onClick={handleSignOut}><LogOut className="w-5 h-5" /></Button>
-          </div>
+          )}
+          <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="rounded-full shadow-lg bg-card/90 backdrop-blur-sm p-2">
+            <Globe className="w-4 h-4" />
+          </button>
+          <Button variant="secondary" size="icon" className="rounded-full shadow-lg bg-card/90 backdrop-blur-sm" onClick={handleSignOut}>
+            <LogOut className="w-4 h-4" />
+          </Button>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8">
-        {/* Welcome */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-foreground">
-            {t('dashboard.welcome')}, {profile?.full_name || user?.email?.split('@')[0]}
-          </h1>
-          <p className="text-muted-foreground mt-1">{t('dashboard.subtitle')}</p>
-        </div>
+      {/* Floating booking card */}
+      <div className="relative z-10 mt-auto pb-20 px-4">
+        {step === 'search' && (
+          <div className="bg-card/95 backdrop-blur-md rounded-3xl shadow-2xl border border-border p-5 space-y-4 max-w-lg mx-auto">
+            <h2 className="text-lg font-bold text-foreground">
+              {lang === 'ar' ? 'إلى أين تريد الذهاب؟' : 'Where are you going?'}
+            </h2>
 
-        {/* Quick Actions */}
-        <div className="grid sm:grid-cols-3 gap-4 mb-10">
-          <Link to="/book" className="bg-card border border-border rounded-2xl p-6 hover:border-secondary/40 hover:shadow-card-hover transition-all group">
-            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20">
-              <Navigation className="w-6 h-6 text-primary" />
+            {/* Pickup */}
+            <div className="space-y-2">
+              <PlacesAutocomplete
+                placeholder={lang === 'ar' ? 'من أين؟ (نقطة الركوب)' : 'From where? (Pickup)'}
+                onSelect={(place) => setPickup(place)}
+                value={pickup?.name || ''}
+                iconColor="text-green-500"
+              />
+              <PlacesAutocomplete
+                placeholder={lang === 'ar' ? 'إلى أين؟ (نقطة النزول)' : 'To where? (Dropoff)'}
+                onSelect={(place) => setDropoff(place)}
+                value={dropoff?.name || ''}
+                iconColor="text-destructive"
+              />
             </div>
-            <h3 className="font-semibold text-foreground">{t('dashboard.bookRide')}</h3>
-            <p className="text-sm text-muted-foreground mt-1">{t('dashboard.bookRideDesc')}</p>
-          </Link>
 
-          <Link to="/my-bookings" className="bg-card border border-border rounded-2xl p-6 hover:border-secondary/40 hover:shadow-card-hover transition-all group">
-            <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center mb-4 group-hover:bg-secondary/20">
-              <Ticket className="w-6 h-6 text-secondary" />
-            </div>
-            <h3 className="font-semibold text-foreground">{t('dashboard.myBookings')}</h3>
-            <p className="text-sm text-muted-foreground mt-1">{t('dashboard.myBookingsDesc')}</p>
-          </Link>
-
-          <Link to="/request-route" className="bg-card border border-border rounded-2xl p-6 hover:border-secondary/40 hover:shadow-card-hover transition-all group">
-            <div className="w-12 h-12 rounded-xl bg-green-50 flex items-center justify-center mb-4 group-hover:bg-green-100">
-              <Plus className="w-6 h-6 text-green-600" />
-            </div>
-            <h3 className="font-semibold text-foreground">{t('dashboard.requestRoute')}</h3>
-            <p className="text-sm text-muted-foreground mt-1">{t('dashboard.requestRouteDesc')}</p>
-          </Link>
-          {isAdmin && (
-            <Link to="/admin" className="bg-card border border-border rounded-2xl p-6 hover:border-destructive/40 hover:shadow-card-hover transition-all group">
-              <div className="w-12 h-12 rounded-xl bg-destructive/10 flex items-center justify-center mb-4 group-hover:bg-destructive/20">
-                <Shield className="w-6 h-6 text-destructive" />
+            {/* Date selector */}
+            <div>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {dateOptions.slice(0, 5).map((opt) => (
+                  <button key={opt.date} onClick={() => setSelectedDate(opt.date)}
+                    className={`px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap border transition-colors ${
+                      selectedDate === opt.date
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-card text-muted-foreground border-border hover:border-primary/50'
+                    }`}>
+                    {opt.label}
+                  </button>
+                ))}
               </div>
-              <h3 className="font-semibold text-foreground">{lang === 'ar' ? 'لوحة الإدارة' : 'Admin Panel'}</h3>
-              <p className="text-sm text-muted-foreground mt-1">{lang === 'ar' ? 'إدارة المسارات والسائقين والحجوزات' : 'Manage routes, drivers & bookings'}</p>
-            </Link>
-          )}
-
-          {isDriver && (
-            <Link to="/driver-dashboard" className="bg-card border border-border rounded-2xl p-6 hover:border-secondary/40 hover:shadow-card-hover transition-all group">
-              <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center mb-4 group-hover:bg-secondary/20">
-                <Car className="w-6 h-6 text-secondary" />
-              </div>
-              <h3 className="font-semibold text-foreground">{lang === 'ar' ? 'لوحة السائق' : 'Driver Dashboard'}</h3>
-              <p className="text-sm text-muted-foreground mt-1">{lang === 'ar' ? 'إدارة رحلاتك والركاب' : 'Manage your rides & passengers'}</p>
-            </Link>
-          )}
-        </div>
-
-        {/* Recent Bookings */}
-        <div>
-          <h2 className="text-xl font-bold text-foreground mb-4">{t('dashboard.recentBookings')}</h2>
-          {bookings.length === 0 ? (
-            <div className="bg-card rounded-2xl border border-border p-12 text-center">
-              <Ticket className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-              <p className="text-muted-foreground">{t('dashboard.noBookings')}</p>
-              <Link to="/book">
-                <Button className="mt-4">{t('dashboard.bookFirst')}</Button>
-              </Link>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {bookings.map((booking) => {
-                const driverProfile = driverProfiles[booking.shuttles?.driver_id];
-                return (
-                  <Link key={booking.id} to={`/my-bookings`} className="block">
-                    <div className="bg-card border border-border rounded-xl p-5 hover:border-secondary/40 transition-all">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                            <MapPin className="w-5 h-5 text-primary" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-foreground">
-                              {lang === 'ar' ? booking.routes?.name_ar : booking.routes?.name_en}
-                            </p>
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground mt-0.5">
-                              <Clock className="w-3.5 h-3.5" />
-                              {booking.scheduled_date} · {booking.scheduled_time}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm font-medium text-foreground">{booking.total_price} EGP</span>
-                          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusColors[booking.status] || ''}`}>
-                            {t(`booking.status.${booking.status}`)}
-                          </span>
+
+            {/* Estimated price */}
+            {estimatedPrice && (
+              <div className="flex items-center justify-between bg-surface rounded-xl p-3">
+                <span className="text-sm text-muted-foreground">{lang === 'ar' ? 'السعر المقدّر' : 'Estimated price'}</span>
+                <span className="text-lg font-bold text-primary">{estimatedPrice} EGP</span>
+              </div>
+            )}
+
+            {/* Search button */}
+            <Button className="w-full h-12 text-base rounded-xl" onClick={searchRides}
+              disabled={!pickup || !dropoff || loadingRides}>
+              {loadingRides ? (
+                <><Loader2 className="w-4 h-4 me-2 animate-spin" />{lang === 'ar' ? 'جاري البحث...' : 'Searching...'}</>
+              ) : (
+                lang === 'ar' ? 'ابحث عن رحلة' : 'Search Rides'
+              )}
+            </Button>
+          </div>
+        )}
+
+        {step === 'results' && (
+          <div className="bg-card/95 backdrop-blur-md rounded-3xl shadow-2xl border border-border p-5 space-y-3 max-w-lg mx-auto max-h-[60vh] overflow-y-auto">
+            <h2 className="text-lg font-bold text-foreground">
+              {lang === 'ar' ? 'الرحلات المتاحة' : 'Available Rides'}
+            </h2>
+
+            {loadingRides ? (
+              <div className="p-8 text-center text-muted-foreground">
+                <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                {lang === 'ar' ? 'جاري البحث...' : 'Searching...'}
+              </div>
+            ) : rideInstances.length > 0 ? (
+              <div className="space-y-2">
+                {rideInstances.map((ride) => (
+                  <button key={ride.id} onClick={() => selectRide(ride)}
+                    className="w-full text-start bg-card border border-border rounded-xl p-4 hover:border-secondary/40 hover:shadow-card-hover transition-all">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
+                        {ride.driver_profile?.avatar_url ? (
+                          <img src={ride.driver_profile.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover" />
+                        ) : (
+                          <UserIcon className="w-5 h-5 text-primary" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-foreground text-sm truncate">
+                          {ride.driver_profile?.full_name || (lang === 'ar' ? 'سائق' : 'Driver')}
+                        </p>
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Car className="w-3 h-3" />
+                          <span>{ride.shuttle_info?.vehicle_model}</span>
                         </div>
                       </div>
-                      {/* Driver info */}
-                      {driverProfile && (
-                        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border text-xs text-muted-foreground">
-                          <Users className="w-3.5 h-3.5 text-primary" />
-                          <span>{driverProfile.full_name}</span>
-                          {booking.shuttles?.vehicle_model && (
-                            <>
-                              <span>·</span>
-                              <span>{booking.shuttles.vehicle_model} · {booking.shuttles.vehicle_plate}</span>
-                            </>
-                          )}
-                          {driverProfile.phone && (
-                            <a href={`tel:${driverProfile.phone}`} className="ms-auto" onClick={(e) => e.stopPropagation()}>
-                              <Button variant="ghost" size="icon" className="w-7 h-7">
-                                <Phone className="w-3.5 h-3.5" />
-                              </Button>
-                            </a>
-                          )}
-                        </div>
+                      <div className="text-end">
+                        <span className="text-lg font-bold text-primary">
+                          {Math.max(10, Math.round(haversineDistanceKm(
+                            pickup!,
+                            dropoff!
+                          ) * pricePerKm))} EGP
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <MapPin className="w-3 h-3 text-green-500 shrink-0" />
+                      <span className="truncate">
+                        {ride.direction === 'return'
+                          ? (lang === 'ar' ? ride.routes?.destination_name_ar : ride.routes?.destination_name_en)
+                          : (lang === 'ar' ? ride.routes?.origin_name_ar : ride.routes?.origin_name_en)}
+                      </span>
+                      <ArrowRight className={`w-3 h-3 shrink-0 ${lang === 'ar' ? 'rotate-180' : ''}`} />
+                      <MapPin className="w-3 h-3 text-destructive shrink-0" />
+                      <span className="truncate">
+                        {ride.direction === 'return'
+                          ? (lang === 'ar' ? ride.routes?.origin_name_ar : ride.routes?.origin_name_en)
+                          : (lang === 'ar' ? ride.routes?.destination_name_ar : ride.routes?.destination_name_en)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 mt-2 text-xs">
+                      <span className="flex items-center gap-1 text-muted-foreground">
+                        <Clock className="w-3 h-3" />{ride.departure_time?.slice(0, 5)}
+                      </span>
+                      <span className={`flex items-center gap-1 font-medium ${ride.available_seats <= 3 ? 'text-destructive' : 'text-green-600'}`}>
+                        <Users className="w-3 h-3" />
+                        {ride.available_seats}/{ride.total_seats}
+                      </span>
+                      {ride.direction === 'return' && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium text-[10px]">
+                          {lang === 'ar' ? 'عودة' : 'Return'}
+                        </span>
                       )}
                     </div>
-                  </Link>
-                );
-              })}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="p-8 text-center">
+                <Calendar className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-muted-foreground text-sm mb-3">
+                  {lang === 'ar' ? 'لا توجد رحلات متاحة لهذا المسار' : 'No rides available for this route'}
+                </p>
+                <Link to="/request-route">
+                  <Button size="sm">{lang === 'ar' ? 'اطلب هذا المسار' : 'Request this route'}</Button>
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
+
+        {step === 'details' && selectedRide && (
+          <div className="bg-card/95 backdrop-blur-md rounded-3xl shadow-2xl border border-border p-5 space-y-4 max-w-lg mx-auto max-h-[70vh] overflow-y-auto">
+            {/* Driver & Vehicle */}
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
+                {driverProfile?.avatar_url ? (
+                  <img src={driverProfile.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" />
+                ) : (
+                  <UserIcon className="w-6 h-6 text-primary" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-foreground">{driverProfile?.full_name || (lang === 'ar' ? 'سائق' : 'Driver')}</h3>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Car className="w-3 h-3" />
+                  <span>{shuttleInfo?.vehicle_model} · {shuttleInfo?.vehicle_plate}</span>
+                </div>
+              </div>
+              <div className="text-end">
+                <p className="text-xl font-bold text-primary">{dynamicPrice} EGP</p>
+                <p className="text-[10px] text-muted-foreground">{selectedRide.departure_time?.slice(0, 5)}</p>
+              </div>
             </div>
-          )}
-        </div>
-      </main>
+
+            {/* Saved locations */}
+            {savedLocations.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <History className="w-3 h-3" />{lang === 'ar' ? 'مواقع سابقة' : 'Previous'}
+                </p>
+                <div className="flex gap-2 overflow-x-auto">
+                  {savedLocations.slice(0, 3).map(sl => (
+                    <button key={sl.id} onClick={() => applySavedLocation(sl)}
+                      className="bg-surface hover:bg-muted rounded-lg px-3 py-1.5 text-[10px] border border-border whitespace-nowrap">
+                      {sl.pickup_name?.split(',')[0]} → {sl.dropoff_name?.split(',')[0]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Pickup & Dropoff */}
+            {renderPointSelector('pickup', pickupMode, setPickupMode, customPickup, validatingPickup, pickupResult)}
+            {renderPointSelector('dropoff', dropoffMode, setDropoffMode, customDropoff, validatingDropoff, dropoffResult)}
+
+            {/* Trip Direction */}
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { value: 'go' as const, labelAr: 'ذهاب', labelEn: 'Going', mult: 1 },
+                { value: 'return' as const, labelAr: 'عودة', labelEn: 'Return', mult: 1 },
+                { value: 'both' as const, labelAr: 'ذهاب وعودة', labelEn: 'Round Trip', mult: 2 },
+              ]).map(opt => (
+                <button key={opt.value} onClick={() => setTripDirection(opt.value)}
+                  className={`px-2 py-2.5 rounded-xl text-center border-2 transition-colors ${
+                    tripDirection === opt.value ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'
+                  }`}>
+                  <p className="text-xs font-medium">{lang === 'ar' ? opt.labelAr : opt.labelEn}</p>
+                  <p className="text-[10px] mt-0.5 opacity-80">{dynamicPrice * opt.mult} EGP</p>
+                </button>
+              ))}
+            </div>
+
+            {/* Active Bundle */}
+            {activeBundlePurchase && (
+              <button
+                onClick={() => setUseBundle(!useBundle)}
+                className={`w-full px-4 py-3 rounded-xl text-sm font-medium border-2 transition-colors flex items-center gap-2 ${
+                  useBundle ? 'bg-secondary text-secondary-foreground border-secondary' : 'bg-card text-foreground border-border hover:border-secondary'
+                }`}>
+                <Package className="w-4 h-4" />
+                {useBundle
+                  ? (lang === 'ar' ? `✓ من الباقة (${activeBundlePurchase.rides_remaining} متبقي)` : `✓ Using bundle (${activeBundlePurchase.rides_remaining} left)`)
+                  : (lang === 'ar' ? `استخدم الباقة (${activeBundlePurchase.rides_remaining} متبقي)` : `Use bundle (${activeBundlePurchase.rides_remaining} left)`)}
+              </button>
+            )}
+
+            {/* Payment */}
+            {!useBundle && (
+              <div className="space-y-3">
+                <div className="bg-surface rounded-xl p-3 text-sm space-y-1">
+                  <p className="text-muted-foreground text-xs">{lang === 'ar' ? 'حوّل عبر InstaPay:' : 'Transfer via InstaPay:'}</p>
+                  <p className="font-bold text-foreground">{tripDirection === 'both' ? dynamicPrice * 2 : dynamicPrice} EGP</p>
+                  {instapayPhone && <p className="font-mono text-xs" dir="ltr">{lang === 'ar' ? 'إلى: ' : 'To: '}{instapayPhone}</p>}
+                </div>
+                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePaymentFile} />
+                {paymentPreview ? (
+                  <div className="space-y-2">
+                    <img src={paymentPreview} alt="" className="w-full h-32 object-contain rounded-lg border border-border bg-muted" />
+                    <Button variant="outline" size="sm" className="w-full" onClick={() => fileInputRef.current?.click()}>
+                      <Upload className="w-3 h-3 me-1" />{lang === 'ar' ? 'تغيير' : 'Change'}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button variant="outline" className="w-full h-16 border-dashed border-2 flex-col gap-1"
+                    onClick={() => fileInputRef.current?.click()}>
+                    <Upload className="w-5 h-5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">{lang === 'ar' ? 'ارفع إثبات InstaPay' : 'Upload InstaPay proof'}</span>
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {/* Book button */}
+            {!isRideFull ? (
+              <Button className="w-full h-12 text-base rounded-xl" onClick={() => handleBook(false)}
+                disabled={loading || !isPickupValid || !isDropoffValid || (!useBundle && !paymentProof)}>
+                {loading ? (
+                  <><Loader2 className="w-4 h-4 me-1 animate-spin" />{lang === 'ar' ? 'جاري الحجز...' : 'Booking...'}</>
+                ) : (
+                  lang === 'ar' ? `تأكيد الحجز · ${tripDirection === 'both' ? dynamicPrice * 2 : dynamicPrice} EGP` : `Confirm · ${tripDirection === 'both' ? dynamicPrice * 2 : dynamicPrice} EGP`
+                )}
+              </Button>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs text-destructive font-medium p-2 bg-destructive/10 rounded-lg">
+                  <AlertCircle className="w-3 h-3" />{lang === 'ar' ? 'مكتمل' : 'Full'}
+                </div>
+                <Button className="w-full" variant="secondary" onClick={() => handleBook(true)}
+                  disabled={loading || !isPickupValid || !isDropoffValid}>
+                  <ListOrdered className="w-4 h-4 me-1" />
+                  {lang === 'ar' ? 'قائمة الانتظار' : 'Join Waitlist'}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Bottom nav */}
+      <BottomNav />
     </div>
   );
 };

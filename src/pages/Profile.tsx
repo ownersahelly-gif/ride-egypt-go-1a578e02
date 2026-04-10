@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import BottomNav from '@/components/BottomNav';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -74,6 +75,8 @@ const Profile = () => {
           </Button>
         </form>
       </main>
+      <div className="h-20" />
+      <BottomNav />
     </div>
   );
 };

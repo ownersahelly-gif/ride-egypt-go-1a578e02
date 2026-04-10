@@ -1,0 +1,1 @@
+INSERT INTO public.app_settings (key, value) VALUES ('price_per_km', '5') ON CONFLICT DO NOTHING;
