@@ -545,6 +545,15 @@ const AdminPanel = () => {
                   <Button size="sm" variant="outline" onClick={() => toggleRouteStatus(route.id, route.status)}>
                     {route.status === 'active' ? (lang === 'ar' ? 'تعطيل' : 'Deactivate') : (lang === 'ar' ? 'تفعيل' : 'Activate')}
                   </Button>
+                  <Button size="sm" variant="destructive" onClick={async () => {
+                    if (!confirm(lang === 'ar' ? 'هل أنت متأكد من حذف هذا المسار؟' : 'Are you sure you want to delete this route?')) return;
+                    await supabase.from('stops').delete().eq('route_id', route.id);
+                    await supabase.from('routes').delete().eq('id', route.id);
+                    toast.success(lang === 'ar' ? 'تم حذف المسار' : 'Route deleted');
+                    fetchAllData();
+                  }}>
+                    <Trash2 className="w-3.5 h-3.5 me-1" />{lang === 'ar' ? 'حذف' : 'Delete'}
+                  </Button>
                 </div>
               </div>
             ))}
