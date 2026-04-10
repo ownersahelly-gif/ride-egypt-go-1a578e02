@@ -310,6 +310,18 @@ const TrackShuttle = () => {
     return () => clearInterval(interval);
   }, [shuttle?.id]);
 
+  // Determine if trip departure is in the future (don't trust stale shuttle GPS)
+  const tripDepartureMs = (() => {
+    if (!booking) return 0;
+    const [hh, mm, ss] = (booking.scheduled_time || '08:00:00').split(':').map(Number);
+    const dep = new Date(booking.scheduled_date + 'T00:00:00');
+    dep.setHours(hh, mm, ss || 0);
+    return dep.getTime();
+  })();
+  const tripNotStartedYet = tripDepartureMs > Date.now();
+  const hasLiveGps = !!(shuttle?.current_lat && shuttle?.current_lng && !tripNotStartedYet);
+  const isBoarded = booking?.status === 'boarded';
+
   // Build tracking markers: shuttle → stops before user → YOU
   const myPickupLat = booking?.custom_pickup_lat ?? route?.origin_lat;
   const myPickupLng = booking?.custom_pickup_lng ?? route?.origin_lng;
@@ -322,8 +334,8 @@ const TrackShuttle = () => {
 
   const markers: { lat: number; lng: number; label?: string; color?: 'red' | 'green' | 'blue' | 'orange' | 'purple' }[] = [];
 
-  // Shuttle marker
-  if (shuttle?.current_lat && shuttle?.current_lng) {
+  // Shuttle marker — only show if trip has started
+  if (hasLiveGps) {
     markers.push({ lat: shuttle.current_lat, lng: shuttle.current_lng, label: '🚐', color: 'blue' });
   }
 
@@ -337,24 +349,12 @@ const TrackShuttle = () => {
     markers.push({ lat: myPickupLat, lng: myPickupLng, label: lang === 'ar' ? 'أنت' : 'YOU', color: 'purple' });
   }
 
-  // Directions: shuttle → (intermediate stops) → user's pickup
-  const trackOrigin = (shuttle?.current_lat && shuttle?.current_lng)
+  // Directions: shuttle → (intermediate stops) → user's pickup (only when live)
+  const trackOrigin = hasLiveGps
     ? { lat: shuttle.current_lat, lng: shuttle.current_lng } : undefined;
   const trackDestination = (myPickupLat && myPickupLng)
     ? { lat: myPickupLat, lng: myPickupLng } : undefined;
   const trackWaypoints = stopsBeforeMe.map(s => ({ lat: s.lat, lng: s.lng }));
-
-  const isBoarded = booking?.status === 'boarded';
-
-  // Determine if trip departure is in the future
-  const tripDepartureMs = (() => {
-    if (!booking) return 0;
-    const [hh, mm, ss] = (booking.scheduled_time || '08:00:00').split(':').map(Number);
-    const dep = new Date(booking.scheduled_date + 'T00:00:00');
-    dep.setHours(hh, mm, ss || 0);
-    return dep.getTime();
-  })();
-  const tripNotStartedYet = tripDepartureMs > Date.now() && !shuttle?.current_lat;
   return (
     <div className="min-h-screen bg-surface flex flex-col">
       {/* Header */}
@@ -415,7 +415,7 @@ const TrackShuttle = () => {
 
 
       <div className="relative" style={{ height: '45vh', minHeight: '280px' }}>
-        {(!shuttle?.current_lat || !shuttle?.current_lng) && !loading ? (
+        {!hasLiveGps && !loading ? (
           <div className="h-full bg-muted flex flex-col items-center justify-center text-center p-6">
             <Car className="w-16 h-16 text-muted-foreground/40 mb-4" />
             <h3 className="text-lg font-semibold text-foreground mb-1">
@@ -435,7 +435,7 @@ const TrackShuttle = () => {
             destination={trackDestination}
             waypoints={trackWaypoints}
             showDirections={!!trackOrigin && !!trackDestination}
-            center={shuttle?.current_lat ? { lat: shuttle.current_lat, lng: shuttle.current_lng } : undefined}
+            center={hasLiveGps ? { lat: shuttle.current_lat, lng: shuttle.current_lng } : undefined}
             zoom={14}
             showUserLocation={false}
           />
