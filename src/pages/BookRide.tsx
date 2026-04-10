@@ -371,12 +371,15 @@ const BookRide = () => {
         ? (lang === 'ar' ? selectedRide.routes.destination_name_ar : selectedRide.routes.destination_name_en)
         : customDropoff?.name;
 
+      const basePrice = selectedRide.routes?.price || 0;
+      const totalPrice = usingBundle ? 0 : (tripDirection === 'both' ? basePrice * 2 : basePrice);
+
       const bookingData: any = {
         user_id: user.id,
         route_id: selectedRide.route_id,
         shuttle_id: selectedRide.shuttle_id,
         seats: 1,
-        total_price: usingBundle ? 0 : (selectedRide.routes?.price || 0),
+        total_price: totalPrice,
         scheduled_date: selectedRide.ride_date,
         scheduled_time: selectedRide.departure_time,
         status: asWaitlist ? 'waitlist' : (usingBundle ? 'confirmed' : 'pending'),
@@ -388,6 +391,7 @@ const BookRide = () => {
         custom_dropoff_lat: dropoffLat,
         custom_dropoff_lng: dropoffLng,
         custom_dropoff_name: dropoffName,
+        trip_direction: tripDirection,
       };
 
       const { error } = await supabase.from('bookings').insert(bookingData);
