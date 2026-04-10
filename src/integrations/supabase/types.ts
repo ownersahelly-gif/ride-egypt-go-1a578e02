@@ -775,6 +775,7 @@ export type Database = {
           origin_lat: number
           origin_lng: number
           origin_name: string
+          preferred_days: number[] | null
           preferred_time: string | null
           status: string
           user_id: string
@@ -788,6 +789,7 @@ export type Database = {
           origin_lat: number
           origin_lng: number
           origin_name: string
+          preferred_days?: number[] | null
           preferred_time?: string | null
           status?: string
           user_id: string
@@ -801,6 +803,7 @@ export type Database = {
           origin_lat?: number
           origin_lng?: number
           origin_name?: string
+          preferred_days?: number[] | null
           preferred_time?: string | null
           status?: string
           user_id?: string

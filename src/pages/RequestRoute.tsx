@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, ChevronRight, MapPin, Navigation } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MapPin, Navigation, Calendar } from 'lucide-react';
 import PlacesAutocomplete from '@/components/PlacesAutocomplete';
 import MapView from '@/components/MapView';
 
@@ -31,8 +31,23 @@ const RequestRoute = () => {
     passedState.destination || { name: '', lat: 0, lng: 0 }
   );
   const [preferredTime, setPreferredTime] = useState('');
+  const [preferredDays, setPreferredDays] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [activePin, setActivePin] = useState<'origin' | 'destination' | null>(null);
+
+  const dayLabels = lang === 'ar'
+    ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  const toggleDay = (day: number) => {
+    setPreferredDays(prev =>
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+    );
+  };
+
+  const selectWeekdays = () => setPreferredDays([0, 1, 2, 3, 4]);
+  const selectWeekend = () => setPreferredDays([5, 6]);
+  const selectAll = () => setPreferredDays([0, 1, 2, 3, 4, 5, 6]);
 
   const handleMapClick = (lat: number, lng: number) => {
     if (!activePin) return;
@@ -58,7 +73,8 @@ const RequestRoute = () => {
         destination_lat: destination.lat,
         destination_lng: destination.lng,
         preferred_time: preferredTime || null,
-      });
+        preferred_days: preferredDays.length > 0 ? preferredDays : null,
+      } as any);
       if (error) throw error;
       toast({ title: t('routeRequest.success'), description: t('routeRequest.successDesc') });
       navigate('/dashboard');
@@ -171,6 +187,41 @@ const RequestRoute = () => {
           <div className="space-y-2">
             <Label>{t('routeRequest.preferredTime')}</Label>
             <Input type="time" value={preferredTime} onChange={(e) => setPreferredTime(e.target.value)} />
+          </div>
+
+          {/* Preferred Days */}
+          <div className="space-y-3">
+            <Label className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-primary" />
+              {lang === 'ar' ? 'الأيام المفضلة' : 'Preferred Days'}
+            </Label>
+            <div className="flex flex-wrap gap-2">
+              {dayLabels.map((label, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => toggleDay(i)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                    preferredDays.includes(i)
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background text-muted-foreground border-border hover:border-primary/50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={selectWeekdays}>
+                {lang === 'ar' ? 'أيام الأسبوع' : 'Weekdays'}
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={selectWeekend}>
+                {lang === 'ar' ? 'عطلة نهاية الأسبوع' : 'Weekend'}
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={selectAll}>
+                {lang === 'ar' ? 'كل الأيام' : 'Every day'}
+              </Button>
+            </div>
           </div>
 
           <Button type="submit" className="w-full" size="lg" disabled={loading || !origin.name || !destination.name}>
