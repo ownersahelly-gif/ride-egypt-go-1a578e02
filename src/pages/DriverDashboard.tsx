@@ -8,10 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import { Globe, LogOut, User, MapPin, Clock, Users, Car, Calendar, DollarSign, Navigation, CheckCircle2, XCircle, Loader2, Play, Plus, Trash2, Repeat, TrendingUp, Star, Route, ArrowRight, AlertCircle, Info } from 'lucide-react';
+import { Globe, LogOut, User, MapPin, Clock, Users, Car, Calendar, DollarSign, Navigation, CheckCircle2, XCircle, Loader2, Play, Plus, Trash2, Repeat, TrendingUp, Star, Route, ArrowRight, AlertCircle, Info, ChevronDown, ChevronUp, MessageCircle } from 'lucide-react';
 import { useDriverBookingNotifications } from '@/hooks/useBookingNotifications';
 import PlacesAutocomplete from '@/components/PlacesAutocomplete';
 import MapView from '@/components/MapView';
+import RideChat from '@/components/RideChat';
 
 type TabType = 'overview' | 'routes' | 'trips' | 'earnings' | 'schedule' | 'shuttle';
 
