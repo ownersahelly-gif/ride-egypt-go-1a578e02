@@ -110,9 +110,7 @@ const Carpool = () => {
       supabase.from('carpool_verifications').select('*').eq('user_id', user!.id).maybeSingle(),
     ]);
     const dbRoutes = routesRes.data || [];
-    // Always include demo routes — they have unique demo-* ids so no duplicates
-    const allRoutes = [...dbRoutes, ...DEMO_ROUTES];
-    setRoutes(allRoutes);
+    setRoutes(dbRoutes);
     setMyRequests(requestsRes.data || []);
     setVerification(verRes.data);
     setLoading(false);
