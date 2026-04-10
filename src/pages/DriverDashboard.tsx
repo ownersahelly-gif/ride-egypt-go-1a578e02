@@ -309,7 +309,7 @@ const DriverDashboard = () => {
     if (error) toast({ title: t('auth.error'), description: error.message, variant: 'destructive' });
     else {
       toast({ title: lang === 'ar' ? 'تمت إضافة الرحلة!' : 'Trip added!' });
-      await generateRideInstances([entry]);
+      await generateRideInstances([entry], quickAddDir);
       const { data } = await supabase.from('driver_schedules').select('*, routes(name_en, name_ar, price, origin_name_en, origin_name_ar, destination_name_en, destination_name_ar, estimated_duration_minutes, origin_lat, origin_lng, destination_lat, destination_lng)').eq('driver_id', user.id).order('day_of_week');
       setDriverSchedules(data || []);
     }

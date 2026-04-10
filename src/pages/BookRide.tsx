@@ -832,13 +832,31 @@ const BookRide = () => {
                       </div>
                       <h3 className="font-semibold text-foreground text-sm mb-2">
                         {lang === 'ar' ? ride.routes?.name_ar : ride.routes?.name_en}
+                        {ride.direction === 'return' && (
+                          <span className="text-xs ms-2 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+                            {lang === 'ar' ? 'عودة' : 'Return'}
+                          </span>
+                        )}
+                        {ride.direction === 'go' && (
+                          <span className="text-xs ms-2 px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">
+                            {lang === 'ar' ? 'ذهاب' : 'Going'}
+                          </span>
+                        )}
                       </h3>
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <MapPin className="w-4 h-4 text-green-500 shrink-0" />
-                        <span className="truncate">{lang === 'ar' ? ride.routes?.origin_name_ar : ride.routes?.origin_name_en}</span>
+                        <span className="truncate">
+                          {ride.direction === 'return'
+                            ? (lang === 'ar' ? ride.routes?.destination_name_ar : ride.routes?.destination_name_en)
+                            : (lang === 'ar' ? ride.routes?.origin_name_ar : ride.routes?.origin_name_en)}
+                        </span>
                         <ArrowRight className="w-4 h-4 shrink-0" />
                         <MapPin className="w-4 h-4 text-destructive shrink-0" />
-                        <span className="truncate">{lang === 'ar' ? ride.routes?.destination_name_ar : ride.routes?.destination_name_en}</span>
+                        <span className="truncate">
+                          {ride.direction === 'return'
+                            ? (lang === 'ar' ? ride.routes?.origin_name_ar : ride.routes?.origin_name_en)
+                            : (lang === 'ar' ? ride.routes?.destination_name_ar : ride.routes?.destination_name_en)}
+                        </span>
                       </div>
                       <div className="flex items-center gap-4 mt-3 text-sm">
                         <span className="flex items-center gap-1 text-muted-foreground">
