@@ -509,7 +509,7 @@ const DriverDashboard = () => {
 
                 {/* Add schedule form */}
                 {showScheduleForm ? (
-                  <div className="bg-card border-2 border-primary/20 rounded-2xl p-5 space-y-4">
+                  <div ref={scheduleFormRef} className="bg-card border-2 border-primary/20 rounded-2xl p-5 space-y-4">
                     {selectedRouteForSchedule && (
                       <div className="bg-primary/5 rounded-xl p-3">
                         <p className="font-medium text-foreground text-sm">{lang === 'ar' ? selectedRouteForSchedule.name_ar : selectedRouteForSchedule.name_en}</p>
