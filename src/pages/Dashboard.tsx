@@ -294,7 +294,7 @@ const Dashboard = () => {
     return { nearest };
   };
 
-  const MAX_DISTANCE_KM = 2;
+  const MAX_DISTANCE_KM = 0.7;
   const validateCustomPoint = useCallback(async (
     point: { lat: number; lng: number; name: string },
     type: 'pickup' | 'dropoff',
