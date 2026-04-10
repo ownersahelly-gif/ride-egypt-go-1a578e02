@@ -473,6 +473,42 @@ const DriverDashboard = () => {
                     }
                   }
 
+                  // Also inject ad-hoc slots from today's bookings that don't match any schedule day
+                  const todayStr2 = now.toISOString().split('T')[0];
+                  const scheduledDays = new Set(driverSchedules.map(s => s.day_of_week));
+                  if (!scheduledDays.has(todayDow)) {
+                    // Group today's bookings by time+direction
+                    const adHocMap = new Map<string, { time: string; direction: 'go' | 'back'; routeId: string }>();
+                    todayBookings.forEach(b => {
+                      const dir = b.trip_direction === 'return' ? 'back' : 'go';
+                      const timeKey = `${b.scheduled_time?.slice(0, 5)}_${dir}`;
+                      if (!adHocMap.has(timeKey)) {
+                        adHocMap.set(timeKey, { time: b.scheduled_time?.slice(0, 5), direction: dir, routeId: b.route_id });
+                      }
+                      // Also add return slot for 'both' trips
+                      if (b.trip_direction === 'both') {
+                        const returnKey = `${b.scheduled_time?.slice(0, 5)}_back`;
+                        if (!adHocMap.has(returnKey)) {
+                          adHocMap.set(returnKey, { time: b.scheduled_time?.slice(0, 5), direction: 'back', routeId: b.route_id });
+                        }
+                      }
+                    });
+                    adHocMap.forEach((v) => {
+                      const routeInfo = allRoutes.find(r => r.id === v.routeId);
+                      tripSlots.push({
+                        scheduleId: `adhoc_${v.time}_${v.direction}`,
+                        routeId: v.routeId,
+                        routeInfo,
+                        day: todayDow,
+                        time: v.time,
+                        direction: v.direction,
+                        dayOffset: 0,
+                        dateStr: todayStr2,
+                        isPast: v.time < currentTime,
+                      });
+                    });
+                  }
+
                   // Sort: non-past first, then by day offset, then by time
                   tripSlots.sort((a, b) => {
                     if (a.isPast !== b.isPast) return a.isPast ? 1 : -1;
@@ -570,11 +606,11 @@ const DriverDashboard = () => {
                         // Get passenger count for THIS specific slot
                         const slotBookings = bookings.filter(b => {
                           if (b.route_id !== slot.routeId || b.status === 'cancelled') return false;
-                          const bDow = new Date(b.scheduled_date).getDay();
-                          if (bDow !== slot.day) return false;
-                          // Match direction
+                          // Match by date string for accuracy (avoids timezone day-of-week issues)
+                          if (b.scheduled_date !== slot.dateStr) return false;
+                          // Match direction — schedule uses 'go'/'back', bookings use 'go'/'return'/'both'
                           if (slot.direction === 'go') return b.trip_direction === 'go' || b.trip_direction === 'both';
-                          return b.trip_direction === 'return' || b.trip_direction === 'both';
+                          return b.trip_direction === 'return' || b.trip_direction === 'back' || b.trip_direction === 'both';
                         });
 
                         const isToday = slot.dayOffset === 0;
