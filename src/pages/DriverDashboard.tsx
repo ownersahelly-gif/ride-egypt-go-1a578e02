@@ -69,6 +69,7 @@ const DriverDashboard = () => {
   const [savingQuickAdd, setSavingQuickAdd] = useState(false);
 
   const { newBookingsCount, acknowledge: ackBookings } = useDriverBookingNotifications(shuttle?.id || null);
+  useRideMessageNotifications();
 
   const dayNames = lang === 'ar'
     ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
