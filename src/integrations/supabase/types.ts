@@ -457,6 +457,7 @@ export type Database = {
           available_seats: number
           created_at: string
           departure_time: string
+          direction: string
           driver_id: string
           id: string
           ride_date: string
@@ -471,6 +472,7 @@ export type Database = {
           available_seats?: number
           created_at?: string
           departure_time: string
+          direction?: string
           driver_id: string
           id?: string
           ride_date: string
@@ -485,6 +487,7 @@ export type Database = {
           available_seats?: number
           created_at?: string
           departure_time?: string
+          direction?: string
           driver_id?: string
           id?: string
           ride_date?: string

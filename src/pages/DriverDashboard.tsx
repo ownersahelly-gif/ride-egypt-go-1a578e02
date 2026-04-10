@@ -246,7 +246,7 @@ const DriverDashboard = () => {
     setSavingSchedule(false);
   };
 
-  const generateRideInstances = async (scheduleEntries: any[]) => {
+  const generateRideInstances = async (scheduleEntries: any[], explicitDirection?: 'go' | 'return') => {
     if (!user || !shuttle) return;
     const instances: any[] = [];
     const today = new Date();
@@ -258,9 +258,9 @@ const DriverDashboard = () => {
           date.setDate(today.getDate() + (w * 7) + d);
           if (date.getDay() === entry.day_of_week && date >= today) {
             const dateStr = date.toISOString().split('T')[0];
-            instances.push({ driver_id: user.id, route_id: entry.route_id, shuttle_id: shuttle.id, ride_date: dateStr, departure_time: entry.departure_time, available_seats: shuttle.capacity, total_seats: shuttle.capacity, status: 'scheduled' });
+            instances.push({ driver_id: user.id, route_id: entry.route_id, shuttle_id: shuttle.id, ride_date: dateStr, departure_time: entry.departure_time, available_seats: shuttle.capacity, total_seats: shuttle.capacity, status: 'scheduled', direction: explicitDirection || 'go' });
             if (entry.return_time) {
-              instances.push({ driver_id: user.id, route_id: entry.route_id, shuttle_id: shuttle.id, ride_date: dateStr, departure_time: entry.return_time, available_seats: shuttle.capacity, total_seats: shuttle.capacity, status: 'scheduled' });
+              instances.push({ driver_id: user.id, route_id: entry.route_id, shuttle_id: shuttle.id, ride_date: dateStr, departure_time: entry.return_time, available_seats: shuttle.capacity, total_seats: shuttle.capacity, status: 'scheduled', direction: 'return' });
             }
           }
         }
@@ -309,7 +309,7 @@ const DriverDashboard = () => {
     if (error) toast({ title: t('auth.error'), description: error.message, variant: 'destructive' });
     else {
       toast({ title: lang === 'ar' ? 'تمت إضافة الرحلة!' : 'Trip added!' });
-      await generateRideInstances([entry]);
+      await generateRideInstances([entry], quickAddDir);
       const { data } = await supabase.from('driver_schedules').select('*, routes(name_en, name_ar, price, origin_name_en, origin_name_ar, destination_name_en, destination_name_ar, estimated_duration_minutes, origin_lat, origin_lng, destination_lat, destination_lng)').eq('driver_id', user.id).order('day_of_week');
       setDriverSchedules(data || []);
     }
