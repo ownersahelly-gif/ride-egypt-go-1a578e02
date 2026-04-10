@@ -293,7 +293,28 @@ const DriverDashboard = () => {
     setSavingRouteRequest(false);
   };
 
-  const handleMapClick = (lat: number, lng: number) => {
+  const quickAddTimeSlot = async () => {
+    if (!user || !shuttle || !quickAddDay) return;
+    setSavingQuickAdd(true);
+    const entry = {
+      driver_id: user.id, route_id: quickAddDay.routeId, shuttle_id: quickAddDay.shuttleId,
+      day_of_week: quickAddDay.day,
+      departure_time: quickAddDir === 'go' ? quickAddTime : quickAddTime,
+      return_time: null,
+      is_recurring: true, is_active: true, min_passengers: 5,
+    };
+    const { error } = await supabase.from('driver_schedules').insert(entry);
+    if (error) toast({ title: t('auth.error'), description: error.message, variant: 'destructive' });
+    else {
+      toast({ title: lang === 'ar' ? 'تمت إضافة الوقت!' : 'Time slot added!' });
+      await generateRideInstances([entry]);
+      const { data } = await supabase.from('driver_schedules').select('*, routes(name_en, name_ar, price, origin_name_en, origin_name_ar, destination_name_en, destination_name_ar, estimated_duration_minutes, origin_lat, origin_lng, destination_lat, destination_lng)').eq('driver_id', user.id).order('day_of_week');
+      setDriverSchedules(data || []);
+    }
+    setQuickAddDay(null);
+    setSavingQuickAdd(false);
+  };
+
     if (!pickingLocation) return;
     if (pickingLocation === 'origin') setRouteRequestForm(p => ({ ...p, origin_lat: lat, origin_lng: lng, origin_name: p.origin_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}` }));
     else setRouteRequestForm(p => ({ ...p, destination_lat: lat, destination_lng: lng, destination_name: p.destination_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}` }));
