@@ -1,0 +1,1 @@
+UPDATE shuttles SET route_id = 'c73cbdc3-e753-4eaa-8a49-9c37c57d29c2' WHERE id = '486c0914-db13-48e2-a96b-ecc9fbd686f8';
