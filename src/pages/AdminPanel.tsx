@@ -1160,7 +1160,7 @@ const AdminPanel = () => {
                       </div>
                       <div className="grid sm:grid-cols-2 gap-2 text-sm">
                         <div className="flex items-start gap-2">
-                          <Navigation className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
+                          <MapPin className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
                           <span className="text-foreground">{rr.origin_name}</span>
                         </div>
                         <div className="flex items-start gap-2">
