@@ -163,6 +163,7 @@ const MapView = ({
           streetViewControl: false,
           fullscreenControl: false,
           gestureHandling: 'greedy',
+          clickableIcons: false,
         }}
       >
         {markers.map((marker, i) => {
