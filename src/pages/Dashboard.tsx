@@ -219,15 +219,25 @@ const Dashboard = () => {
   // Route directions for on-route checking
   useEffect(() => {
     if (!selectedRide?.routes || typeof google === 'undefined' || !google?.maps?.DirectionsService) { setRouteDirections(null); return; }
+
+    const isReturnRide = selectedRide.direction === 'return';
+    const origin = isReturnRide
+      ? { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng }
+      : { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng };
+    const destination = isReturnRide
+      ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng }
+      : { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng };
+
     const ds = new google.maps.DirectionsService();
     ds.route({
-      origin: { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng },
-      destination: { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng },
+      origin,
+      destination,
       travelMode: google.maps.TravelMode.DRIVING,
     }, (result, status) => {
       if (status === 'OK' && result) setRouteDirections(result);
+      else setRouteDirections(null);
     });
-  }, [selectedRide?.route_id]);
+  }, [selectedRide?.route_id, selectedRide?.direction]);
 
   const selectRide = async (ride: any) => {
     setSelectedRide(ride);
@@ -263,7 +273,6 @@ const Dashboard = () => {
     if (routeDirections) {
       const path = routeDirections.routes?.[0]?.overview_path;
       if (path && path.length > 1) {
-        // Check every segment, not just vertices
         for (let i = 0; i < path.length - 1; i++) {
           const a = { lat: path[i].lat(), lng: path[i].lng() };
           const b = { lat: path[i + 1].lat(), lng: path[i + 1].lng() };
@@ -298,67 +307,72 @@ const Dashboard = () => {
     setResult(null);
     setCustom(point);
 
-    // Find nearest point on route for visual line
     const { nearest } = findNearestRoutePoint(point);
     setNearestRoutePoint(nearest);
 
-    // Use Google Directions API for the real car path both ways:
-    // route point -> user point, then user point -> same route point.
-    let toUserKm: number;
-    let backToRouteKm: number;
-    if (nearest && typeof google !== 'undefined') {
-      try {
-        const directionsService = new google.maps.DirectionsService();
-        const getDrivingDistanceKm = (origin: { lat: number; lng: number }, destination: { lat: number; lng: number }) =>
-          new Promise<number>((resolve) => {
-            directionsService.route({
-              origin,
-              destination,
-              travelMode: google.maps.TravelMode.DRIVING,
-            }, (res, status) => {
-              if (status === 'OK' && res?.routes?.[0]?.legs?.[0]) {
-                resolve((res.routes[0].legs[0].distance?.value || 0) / 1000);
-              } else {
-                resolve(haversineDistanceKm(origin, destination));
-              }
-            });
+    const isReturnRide = selectedRide.direction === 'return';
+    const origin = isReturnRide
+      ? { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng }
+      : { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng };
+    const destination = isReturnRide
+      ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng }
+      : { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng };
+
+    const getRouteDistanceKm = (result: google.maps.DirectionsResult | null) =>
+      (result?.routes?.[0]?.legs || []).reduce((sum, leg) => sum + ((leg.distance?.value || 0) / 1000), 0);
+
+    try {
+      if (typeof google === 'undefined' || !google?.maps?.DirectionsService) throw new Error('Directions unavailable');
+
+      const directionsService = new google.maps.DirectionsService();
+      const getDirections = (waypoints?: google.maps.DirectionsWaypoint[]) =>
+        new Promise<google.maps.DirectionsResult | null>((resolve) => {
+          directionsService.route({
+            origin,
+            destination,
+            travelMode: google.maps.TravelMode.DRIVING,
+            waypoints,
+            optimizeWaypoints: false,
+          }, (res, status) => {
+            resolve(status === 'OK' ? res : null);
           });
+        });
 
-        [toUserKm, backToRouteKm] = await Promise.all([
-          getDrivingDistanceKm(nearest, point),
-          getDrivingDistanceKm(point, nearest),
-        ]);
-      } catch {
-        toUserKm = haversineDistanceKm(point, nearest);
-        backToRouteKm = toUserKm;
+      const baseResult = routeDirections || await getDirections();
+      const waypointResult = await getDirections([{ location: point, stopover: true }]);
+
+      const baseDistanceKm = getRouteDistanceKm(baseResult);
+      const withWaypointDistanceKm = getRouteDistanceKm(waypointResult);
+      const extraDistanceKm = Math.max(0, withWaypointDistanceKm - baseDistanceKm);
+      const ok = extraDistanceKm <= MAX_DISTANCE_KM;
+      const onRoute = extraDistanceKm <= 0.1;
+
+      setResult({ ok, minutes: Math.round(extraDistanceKm * 10) / 10, onRoute });
+
+      if (!ok) {
+        toast({
+          title: lang === 'ar' ? 'موقع بعيد عن المسار' : 'Too far from route',
+          description: lang === 'ar'
+            ? `إضافة هذا الموقع على المسار تزيد الرحلة ${extraDistanceKm.toFixed(1)} كم (الحد الأقصى ${MAX_DISTANCE_KM} كم)`
+            : `Adding this point to the route adds ${extraDistanceKm.toFixed(1)} km (max ${MAX_DISTANCE_KM} km)`,
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: lang === 'ar' ? '✅ موقع مقبول' : '✅ Location accepted',
+          description: lang === 'ar'
+            ? `إضافة هذا الموقع تزيد الرحلة ${extraDistanceKm.toFixed(1)} كم`
+            : `This point adds ${extraDistanceKm.toFixed(1)} km to the route`,
+        });
       }
-    } else {
-      toUserKm = nearest ? haversineDistanceKm(point, nearest) : 999;
-      backToRouteKm = toUserKm;
+    } catch {
+      const fallbackKm = nearest ? haversineDistanceKm(point, nearest) * 2 : 999;
+      const ok = fallbackKm <= MAX_DISTANCE_KM;
+      const onRoute = fallbackKm <= 0.1;
+      setResult({ ok, minutes: Math.round(fallbackKm * 10) / 10, onRoute });
+    } finally {
+      setValidating(false);
     }
-
-    const roundTripKm = toUserKm + backToRouteKm;
-    const ok = roundTripKm <= MAX_DISTANCE_KM;
-    const onRoute = roundTripKm <= 0.1;
-    setResult({ ok, minutes: Math.round(roundTripKm * 10) / 10, onRoute });
-
-    if (!ok) {
-      toast({
-        title: lang === 'ar' ? 'موقع بعيد عن المسار' : 'Too far from route',
-        description: lang === 'ar'
-          ? `الذهاب للموقع والرجوع للمسار = ${roundTripKm.toFixed(1)} كم (الحد الأقصى ${MAX_DISTANCE_KM} كم)`
-          : `Driving to the point and back to the route is ${roundTripKm.toFixed(1)} km (max ${MAX_DISTANCE_KM} km)`,
-        variant: 'destructive',
-      });
-    } else {
-      toast({
-        title: lang === 'ar' ? '✅ موقع مقبول' : '✅ Location accepted',
-        description: lang === 'ar'
-          ? `الذهاب للموقع والرجوع للمسار = ${roundTripKm.toFixed(1)} كم`
-          : `Drive-to-point + return-to-route: ${roundTripKm.toFixed(1)} km`,
-      });
-    }
-    setValidating(false);
   }, [selectedRide, routeDirections, lang, toast]);
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
@@ -674,8 +688,8 @@ const Dashboard = () => {
                   <span className="font-medium block truncate">{customPoint.name}</span>
                   <span className="text-[10px] opacity-75">
                     {result.ok
-                      ? (lang === 'ar' ? `${result.minutes} كم ذهاباً وعودة ✓` : `${result.minutes} km round trip ✓`)
-                      : (lang === 'ar' ? `${result.minutes} كم ذهاباً وعودة (الحد ${MAX_DISTANCE_KM} كم)` : `${result.minutes} km round trip (max ${MAX_DISTANCE_KM} km)`)}
+                      ? (lang === 'ar' ? `${result.minutes} كم زيادة على المسار ✓` : `${result.minutes} km added to route ✓`)
+                      : (lang === 'ar' ? `${result.minutes} كم زيادة على المسار (الحد ${MAX_DISTANCE_KM} كم)` : `${result.minutes} km added to route (max ${MAX_DISTANCE_KM} km)`)}
                   </span>
                 </div>
               </div>
