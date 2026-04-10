@@ -17,6 +17,7 @@ import { useRef } from 'react';
 
 type TabType = 'home' | 'schedule' | 'trips';
 
+// Driver dashboard component
 const DriverDashboard = () => {
   const { user, signOut } = useAuth();
   const { t, lang, setLang } = useLanguage();
