@@ -61,6 +61,7 @@ export type Database = {
           shuttle_id: string | null
           status: string
           total_price: number
+          trip_direction: string
           updated_at: string
           user_id: string
           waitlist_position: number | null
@@ -87,6 +88,7 @@ export type Database = {
           shuttle_id?: string | null
           status?: string
           total_price?: number
+          trip_direction?: string
           updated_at?: string
           user_id: string
           waitlist_position?: number | null
@@ -113,6 +115,7 @@ export type Database = {
           shuttle_id?: string | null
           status?: string
           total_price?: number
+          trip_direction?: string
           updated_at?: string
           user_id?: string
           waitlist_position?: number | null
