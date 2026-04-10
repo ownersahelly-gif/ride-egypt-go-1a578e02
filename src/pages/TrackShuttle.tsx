@@ -412,15 +412,8 @@ const TrackShuttle = () => {
         </div>
       </header>
 
-      {/* Compute if trip hasn't started */}
-      {(() => {
-        const now = new Date();
-        const [hh, mm, ss] = (booking?.scheduled_time || '08:00:00').split(':').map(Number);
-        const dep = new Date(booking?.scheduled_date + 'T00:00:00');
-        dep.setHours(hh, mm, ss || 0);
-        const tripNotStarted = !shuttle?.current_lat && dep.getTime() > now.getTime();
-        return null; // just for scoping
-      })()}
+
+
       <div className="relative" style={{ height: '45vh', minHeight: '280px' }}>
         {(!shuttle?.current_lat || !shuttle?.current_lng) && !loading ? (
           <div className="h-full bg-muted flex flex-col items-center justify-center text-center p-6">
