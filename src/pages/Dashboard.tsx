@@ -828,10 +828,7 @@ const Dashboard = () => {
                       </div>
                       <div className="text-end">
                         <span className="text-lg font-bold text-primary">
-                          {Math.max(10, Math.round(haversineDistanceKm(
-                            pickup!,
-                            dropoff!
-                          ) * pricePerKm))} EGP
+                          {estimatedPrice ?? '...'} EGP
                         </span>
                       </div>
                     </div>
