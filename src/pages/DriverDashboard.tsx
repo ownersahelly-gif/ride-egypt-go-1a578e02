@@ -481,6 +481,8 @@ const DriverDashboard = () => {
                   });
 
                   const displaySlots = showAllUpcoming ? tripSlots : tripSlots.slice(0, 4);
+                  const routeIds = [...new Set(driverSchedules.map(s => s.route_id).filter(Boolean))];
+                  const firstTodayTrip = tripSlots.find(slot => slot.dayOffset === 0) || null;
 
                   const getDayLabel = (offset: number, dow: number) => {
                     if (offset === 0) return lang === 'ar' ? 'اليوم' : 'Today';
@@ -494,6 +496,72 @@ const DriverDashboard = () => {
                         <Navigation className="w-4 h-4 text-primary" />
                         {lang === 'ar' ? 'الرحلات القادمة' : 'Upcoming Trips'}
                       </h3>
+
+                      <div className="bg-card border border-primary/20 rounded-2xl p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">
+                              {lang === 'ar' ? 'إدارة رحلات اليوم' : 'Manage today\'s trips'}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {lang === 'ar'
+                                ? 'من هنا تضيف رحلة جديدة بسرعة، أو تفتح أي رحلة، أو تحذفها من زر الحذف على اليمين.'
+                                : 'Use this area to quickly add a trip, open a trip, or remove it with the delete button on the right.'}
+                            </p>
+                          </div>
+                          <Button variant="outline" size="sm" onClick={() => setTab('schedule')}>
+                            <Calendar className="w-4 h-4 me-1" />
+                            {lang === 'ar' ? 'الجدول الكامل' : 'Full schedule'}
+                          </Button>
+                        </div>
+
+                        {quickAddDay ? (
+                          <div className="bg-background border border-border rounded-2xl p-4 space-y-3">
+                            <p className="text-sm font-medium text-foreground">{lang === 'ar' ? 'إضافة رحلة جديدة' : 'Add new trip'}</p>
+                            <div className="flex flex-wrap gap-2">
+                              {dayNames.map((name, i) => (
+                                <button
+                                  key={i}
+                                  onClick={() => setQuickAddDay(prev => prev ? { ...prev, day: i } : null)}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                                    quickAddDay?.day === i ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-muted-foreground border-border'
+                                  }`}
+                                >
+                                  {name}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="flex flex-col sm:flex-row items-stretch gap-2">
+                              <select
+                                value={quickAddDir}
+                                onChange={e => setQuickAddDir(e.target.value as 'go' | 'return')}
+                                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                              >
+                                <option value="go">{lang === 'ar' ? '→ ذهاب' : '→ Going'}</option>
+                                <option value="return">{lang === 'ar' ? '← عودة' : '← Returning'}</option>
+                              </select>
+                              <Input type="time" value={quickAddTime} onChange={e => setQuickAddTime(e.target.value)} className="flex-1 h-10" />
+                            </div>
+                            <div className="flex flex-col sm:flex-row gap-2">
+                              <Button className="flex-1" onClick={quickAddTimeSlot} disabled={savingQuickAdd}>
+                                {savingQuickAdd ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4 me-1" />}
+                                {lang === 'ar' ? 'إضافة الرحلة الآن' : 'Add trip now'}
+                              </Button>
+                              <Button variant="outline" className="flex-1" onClick={() => setQuickAddDay(null)}>
+                                {lang === 'ar' ? 'إلغاء' : 'Cancel'}
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <Button
+                            className="w-full h-11"
+                            onClick={() => routeIds.length > 0 ? setQuickAddDay({ routeId: routeIds[0], day: todayDow, shuttleId: shuttle.id }) : setTab('schedule')}
+                          >
+                            <Plus className="w-4 h-4 me-1" />
+                            {lang === 'ar' ? 'إضافة توقيت جديد لليوم' : 'Add a new time for today'}
+                          </Button>
+                        )}
+                      </div>
 
                       {displaySlots.map((slot) => {
                         const key = `${slot.scheduleId}_${slot.direction}`;
@@ -510,7 +578,8 @@ const DriverDashboard = () => {
                         });
 
                         const isToday = slot.dayOffset === 0;
-                        const canStart = isToday && !slot.isPast && shuttle.status === 'active' && slotBookings.length > 0;
+                        const isTestTrip = !!firstTodayTrip && firstTodayTrip.scheduleId === slot.scheduleId && firstTodayTrip.direction === slot.direction;
+                        const canStart = shuttle.status === 'active' && ((isToday && !slot.isPast && slotBookings.length > 0) || isTestTrip);
 
                         const routeOrigin = { lat: slot.routeInfo?.origin_lat || 0, lng: slot.routeInfo?.origin_lng || 0 };
                         const routeDestination = { lat: slot.routeInfo?.destination_lat || 0, lng: slot.routeInfo?.destination_lng || 0 };
@@ -561,14 +630,26 @@ const DriverDashboard = () => {
                               {/* Delete button on card */}
                               <button
                                 onClick={() => deleteSchedule(slot.scheduleId)}
-                                className="px-3 flex items-center justify-center border-s border-border hover:bg-destructive/10 transition-colors"
-                                title={lang === 'ar' ? 'حذف' : 'Delete'}
+                                className="px-3 sm:px-4 flex items-center justify-center gap-2 border-s border-border hover:bg-destructive/10 transition-colors text-destructive"
+                                title={lang === 'ar' ? 'حذف الرحلة' : 'Remove trip'}
                               >
-                                <Trash2 className="w-4 h-4 text-destructive/60 hover:text-destructive" />
+                                <Trash2 className="w-4 h-4" />
+                                <span className="hidden sm:inline text-xs font-medium">{lang === 'ar' ? 'حذف' : 'Remove'}</span>
                               </button>
                             </div>
                             {isExpanded && (
                               <div className="border-t border-border p-4 space-y-3">
+                                {isTestTrip && (
+                                  <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 flex items-center gap-2">
+                                    <Info className="w-4 h-4 text-primary" />
+                                    <p className="text-sm text-foreground">
+                                      {lang === 'ar'
+                                        ? 'هذه أول رحلة اليوم، ويمكنك فتحها الآن للتجربة.'
+                                        : 'This is the first trip today, so you can open it now for testing.'}
+                                    </p>
+                                  </div>
+                                )}
+
                                 {/* Status message */}
                                 {!isToday && (
                                   <div className="bg-muted/50 rounded-xl p-3 flex items-center gap-2">
@@ -685,52 +766,6 @@ const DriverDashboard = () => {
                         </button>
                       )}
 
-                      {/* Quick add new time slot */}
-                      {(() => {
-                        const routeIds = [...new Set(driverSchedules.map(s => s.route_id))];
-                        if (routeIds.length === 0) return null;
-                        const firstRoute = driverSchedules[0]?.routes;
-                        const isQuickAdding = quickAddDay !== null;
-                        return (
-                          <div>
-                            {!isQuickAdding ? (
-                              <Button variant="outline" size="sm" className="w-full" onClick={() => setQuickAddDay({ routeId: routeIds[0], day: todayDow, shuttleId: shuttle.id })}>
-                                <Plus className="w-4 h-4 me-1" />
-                                {lang === 'ar' ? 'إضافة رحلة جديدة' : 'Add new trip'}
-                              </Button>
-                            ) : (
-                              <div className="bg-card border border-primary/20 rounded-2xl p-4 space-y-3">
-                                <p className="text-sm font-medium text-foreground">{lang === 'ar' ? 'إضافة رحلة جديدة' : 'Add new trip'}</p>
-                                <div className="flex flex-wrap gap-2">
-                                  {dayNames.map((name, i) => (
-                                    <button key={i} onClick={() => setQuickAddDay(prev => prev ? { ...prev, day: i } : null)}
-                                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                                        quickAddDay?.day === i ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-muted-foreground border-border'
-                                      }`}>{name}</button>
-                                  ))}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <select value={quickAddDir} onChange={e => setQuickAddDir(e.target.value as 'go' | 'return')}
-                                    className="h-9 rounded-md border border-input bg-background px-2 text-sm">
-                                    <option value="go">{lang === 'ar' ? '→ ذهاب' : '→ Going'}</option>
-                                    <option value="return">{lang === 'ar' ? '← عودة' : '← Returning'}</option>
-                                  </select>
-                                  <Input type="time" value={quickAddTime} onChange={e => setQuickAddTime(e.target.value)} className="flex-1 h-9" />
-                                </div>
-                                <div className="flex gap-2">
-                                  <Button size="sm" className="flex-1" onClick={quickAddTimeSlot} disabled={savingQuickAdd}>
-                                    {savingQuickAdd ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4 me-1" />}
-                                    {lang === 'ar' ? 'إضافة' : 'Add'}
-                                  </Button>
-                                  <Button size="sm" variant="outline" onClick={() => setQuickAddDay(null)}>
-                                    {lang === 'ar' ? 'إلغاء' : 'Cancel'}
-                                  </Button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
                     </div>
                   );
                 })()}
