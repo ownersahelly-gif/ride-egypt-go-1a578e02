@@ -604,7 +604,7 @@ const DriverDashboard = () => {
                                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold ${
                                     slot.direction === 'go' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
                                   }`}>
-                                    {slot.direction === 'go' ? (lang === 'ar' ? '←' : '→') : (lang === 'ar' ? '→' : '←')}
+                                    {lang === 'ar' ? '←' : '→'}
                                   </div>
                                   <div>
                                     <div className="flex items-center gap-2">
@@ -618,7 +618,7 @@ const DriverDashboard = () => {
                                     <p className="text-sm font-medium text-foreground mt-0.5">
                                       {slot.direction === 'go'
                                         ? `${displayOrigin} ${lang === 'ar' ? '←' : '→'} ${displayDest}`
-                                        : `${displayDest} ${lang === 'ar' ? '→' : '←'} ${displayOrigin}`}
+                                        : `${displayDest} ${lang === 'ar' ? '←' : '→'} ${displayOrigin}`}
                                     </p>
                                     <p className="text-xs text-muted-foreground">{slotBookings.length} {lang === 'ar' ? 'راكب' : 'passengers'}</p>
                                   </div>
