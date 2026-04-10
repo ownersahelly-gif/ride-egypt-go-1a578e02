@@ -193,6 +193,7 @@ const BookRide = () => {
     setPickupMode('start');
     setDropoffMode('end');
     setUseBundle(false);
+    setTripDirection('both');
     setStep('details');
 
     if (user && ride.route_id) {
