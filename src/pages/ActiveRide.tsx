@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import {
   ChevronLeft, ChevronRight, Users, MapPin, MessageCircle,
   CheckCircle2, Navigation, Loader2, UserCheck, LogOut as DropOff,
-  Phone, Clock, AlertCircle, Flag, SkipForward, ArrowRight
+  Phone, Clock, AlertCircle, Flag, SkipForward, ArrowRight, Undo2
 } from 'lucide-react';
 
 interface OrderedStop {
@@ -237,6 +237,12 @@ const ActiveRide = () => {
     }
   };
 
+  const goToPreviousStop = () => {
+    if (currentStopIndex > 0) {
+      setCurrentStopIndex(prev => prev - 1);
+    }
+  };
+
   const verifyBoarding = async (bookingId: string) => {
     const booking = bookings.find(b => b.id === bookingId);
     if (!booking) return;
@@ -452,6 +458,11 @@ const ActiveRide = () => {
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
+                  {currentStopIndex > 0 && (
+                    <Button variant="outline" onClick={goToPreviousStop} title={lang === 'ar' ? 'رجوع' : 'Previous'}>
+                      <Undo2 className="w-4 h-4" />
+                    </Button>
+                  )}
                   <Button className="flex-1" onClick={() => { setVerifyingBooking(currentStop.bookingId); setBoardingInput(''); }}>
                     <CheckCircle2 className="w-4 h-4 me-2" />
                     {lang === 'ar' ? 'تأكيد صعود' : 'Verify Boarding'}
@@ -466,6 +477,11 @@ const ActiveRide = () => {
               )
             ) : (
               <div className="flex items-center gap-2">
+                {currentStopIndex > 0 && (
+                  <Button variant="outline" onClick={goToPreviousStop} title={lang === 'ar' ? 'رجوع' : 'Previous'}>
+                    <Undo2 className="w-4 h-4" />
+                  </Button>
+                )}
                 <Button className="flex-1" variant="outline" onClick={() => markDroppedOff(currentStop.bookingId)}>
                   <DropOff className="w-4 h-4 me-2" />
                   {lang === 'ar' ? 'تأكيد الإنزال' : 'Confirm Drop-off'}
