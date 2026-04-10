@@ -397,7 +397,7 @@ const ActiveRide = () => {
               )}
             </div>
 
-            <div className="flex items-center gap-1 text-sm text-muted-foreground mb-4">
+            <div className="flex items-center gap-1 text-sm text-muted-foreground mb-3">
               <MapPin className="w-4 h-4 shrink-0" />
               <span>{currentStop.locationName}</span>
               {currentStop.isCustom && (
@@ -406,6 +406,20 @@ const ActiveRide = () => {
                 </span>
               )}
             </div>
+
+            {/* Navigate with Google Maps — opens turn-by-turn directions */}
+            <a
+              href={`https://www.google.com/maps/dir/?api=1&destination=${currentStop.lat},${currentStop.lng}&travelmode=driving`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mb-4 block"
+            >
+              <Button variant="secondary" className="w-full gap-2">
+                <Navigation className="w-4 h-4" />
+                {lang === 'ar' ? 'افتح الملاحة في خرائط جوجل' : 'Navigate in Google Maps'}
+                <ArrowRight className="w-4 h-4 ms-auto" />
+              </Button>
+            </a>
 
             {/* Action buttons */}
             {currentStop.type === 'pickup' ? (
