@@ -284,22 +284,39 @@ const TrackShuttle = () => {
     return () => clearInterval(interval);
   }, [shuttle?.id]);
 
-  // Build markers
-  const markers: { lat: number; lng: number; label?: string; color?: 'red' | 'green' | 'blue' }[] = [];
-  if (route) {
-    markers.push({ lat: route.origin_lat, lng: route.origin_lng, label: 'A', color: 'green' });
-    markers.push({ lat: route.destination_lat, lng: route.destination_lng, label: 'B', color: 'red' });
-  }
+  // Build tracking markers: shuttle → stops before user → YOU
+  const myPickupLat = booking?.custom_pickup_lat ?? route?.origin_lat;
+  const myPickupLng = booking?.custom_pickup_lng ?? route?.origin_lng;
+
+  // Find stops before current user along the route
+  const myProgress = passengerStops.find(s => s.isCurrentUser && s.type === 'pickup')?.orderIndex ?? 0;
+  const stopsBeforeMe = passengerStops.filter(
+    s => s.type === 'pickup' && !s.isCurrentUser && s.orderIndex < myProgress && s.status !== 'boarded'
+  );
+
+  const markers: { lat: number; lng: number; label?: string; color?: 'red' | 'green' | 'blue' | 'orange' | 'purple' }[] = [];
+
+  // Shuttle marker
   if (shuttle?.current_lat && shuttle?.current_lng) {
     markers.push({ lat: shuttle.current_lat, lng: shuttle.current_lng, label: '🚐', color: 'blue' });
   }
-  // Show current user's custom pickup/dropoff
-  if (booking?.custom_pickup_lat && booking?.custom_pickup_lng) {
-    markers.push({ lat: booking.custom_pickup_lat, lng: booking.custom_pickup_lng, label: 'P', color: 'green' });
+
+  // Intermediate stop markers (other passengers' pickups before the user)
+  stopsBeforeMe.forEach((s, i) => {
+    markers.push({ lat: s.lat, lng: s.lng, label: `${i + 1}`, color: 'orange' });
+  });
+
+  // Big "YOU" marker — the user's pickup
+  if (myPickupLat && myPickupLng) {
+    markers.push({ lat: myPickupLat, lng: myPickupLng, label: lang === 'ar' ? 'أنت' : 'YOU', color: 'purple' });
   }
-  if (booking?.custom_dropoff_lat && booking?.custom_dropoff_lng) {
-    markers.push({ lat: booking.custom_dropoff_lat, lng: booking.custom_dropoff_lng, label: 'D', color: 'red' });
-  }
+
+  // Directions: shuttle → (intermediate stops) → user's pickup
+  const trackOrigin = (shuttle?.current_lat && shuttle?.current_lng)
+    ? { lat: shuttle.current_lat, lng: shuttle.current_lng } : undefined;
+  const trackDestination = (myPickupLat && myPickupLng)
+    ? { lat: myPickupLat, lng: myPickupLng } : undefined;
+  const trackWaypoints = stopsBeforeMe.map(s => ({ lat: s.lat, lng: s.lng }));
 
   const isBoarded = booking?.status === 'boarded';
 
@@ -378,12 +395,13 @@ const TrackShuttle = () => {
           <MapView
             className="h-full w-full"
             markers={markers}
-            origin={route ? { lat: route.origin_lat, lng: route.origin_lng } : undefined}
-            destination={route ? { lat: route.destination_lat, lng: route.destination_lng } : undefined}
-            showDirections={!!route}
+            origin={trackOrigin}
+            destination={trackDestination}
+            waypoints={trackWaypoints}
+            showDirections={!!trackOrigin && !!trackDestination}
             center={shuttle?.current_lat ? { lat: shuttle.current_lat, lng: shuttle.current_lng } : undefined}
             zoom={14}
-            showUserLocation
+            showUserLocation={false}
           />
         )}
 

@@ -176,21 +176,39 @@ const MapView = ({
           };
           const fill = colorMap[marker.color || 'red'] || '#EF4444';
           const isShuttle = marker.color === 'blue';
+          const isYou = marker.color === 'purple';
+
+          let svgIcon: string;
+          let size: google.maps.Size;
+          let anchor: google.maps.Point | undefined;
+          let labelOrigin: google.maps.Point | undefined;
+
+          if (isShuttle) {
+            svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" fill="${fill}" stroke="white" stroke-width="3"/><text x="22" y="29" text-anchor="middle" fill="white" font-size="20">🚐</text></svg>`;
+            size = new google.maps.Size(44, 44);
+          } else if (isYou) {
+            // Big prominent "YOU" marker with pulsing ring
+            svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="66" viewBox="0 0 56 66"><circle cx="28" cy="28" r="26" fill="${fill}" opacity="0.2"/><circle cx="28" cy="28" r="18" fill="${fill}" stroke="white" stroke-width="3"/><path d="M28 46 L28 62" stroke="${fill}" stroke-width="3"/><circle cx="28" cy="62" r="3" fill="${fill}"/></svg>`;
+            size = new google.maps.Size(56, 66);
+            anchor = new google.maps.Point(28, 62);
+            labelOrigin = new google.maps.Point(28, 28);
+          } else {
+            svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42"><path d="M16 0C7.2 0 0 7.2 0 16c0 12 16 26 16 26s16-14 16-26C32 7.2 24.8 0 16 0z" fill="${fill}" stroke="white" stroke-width="2"/><circle cx="16" cy="16" r="10" fill="white" opacity="0.3"/></svg>`;
+            size = new google.maps.Size(28, 36);
+            anchor = new google.maps.Point(14, 36);
+            labelOrigin = new google.maps.Point(16, 16);
+          }
 
           return (
             <Marker
               key={i}
               position={{ lat: marker.lat, lng: marker.lng }}
-              label={!isShuttle && marker.label ? { text: marker.label, color: 'white', fontWeight: 'bold', fontSize: '11px' } : undefined}
+              label={!isShuttle && marker.label ? { text: marker.label, color: 'white', fontWeight: 'bold', fontSize: isYou ? '13px' : '11px' } : undefined}
               icon={{
-                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
-                  isShuttle
-                    ? `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><circle cx="20" cy="20" r="18" fill="${fill}" stroke="white" stroke-width="3"/><text x="20" y="26" text-anchor="middle" fill="white" font-size="18">🚐</text></svg>`
-                    : `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42"><path d="M16 0C7.2 0 0 7.2 0 16c0 12 16 26 16 26s16-14 16-26C32 7.2 24.8 0 16 0z" fill="${fill}" stroke="white" stroke-width="2"/><circle cx="16" cy="16" r="10" fill="white" opacity="0.3"/></svg>`
-                ),
-                scaledSize: isShuttle ? new google.maps.Size(40, 40) : new google.maps.Size(28, 36),
-                anchor: isShuttle ? undefined : new google.maps.Point(14, 36),
-                labelOrigin: isShuttle ? undefined : new google.maps.Point(16, 16),
+                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svgIcon),
+                scaledSize: size,
+                anchor,
+                labelOrigin,
               }}
             />
           );
