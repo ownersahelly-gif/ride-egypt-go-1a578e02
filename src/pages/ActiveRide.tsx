@@ -237,6 +237,12 @@ const ActiveRide = () => {
     }
   };
 
+  const goToPreviousStop = () => {
+    if (currentStopIndex > 0) {
+      setCurrentStopIndex(prev => prev - 1);
+    }
+  };
+
   const verifyBoarding = async (bookingId: string) => {
     const booking = bookings.find(b => b.id === bookingId);
     if (!booking) return;
