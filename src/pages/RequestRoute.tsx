@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import BottomNav from '@/components/BottomNav';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -18,11 +18,18 @@ const RequestRoute = () => {
   const { user } = useAuth();
   const { t, lang } = useLanguage();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const Back = lang === 'ar' ? ChevronRight : ChevronLeft;
 
-  const [origin, setOrigin] = useState<Location>({ name: '', lat: 0, lng: 0 });
-  const [destination, setDestination] = useState<Location>({ name: '', lat: 0, lng: 0 });
+  const passedState = (location.state as any) || {};
+
+  const [origin, setOrigin] = useState<Location>(
+    passedState.origin || { name: '', lat: 0, lng: 0 }
+  );
+  const [destination, setDestination] = useState<Location>(
+    passedState.destination || { name: '', lat: 0, lng: 0 }
+  );
   const [preferredTime, setPreferredTime] = useState('');
   const [loading, setLoading] = useState(false);
   const [activePin, setActivePin] = useState<'origin' | 'destination' | null>(null);

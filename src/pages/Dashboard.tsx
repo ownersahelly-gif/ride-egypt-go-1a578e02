@@ -960,9 +960,12 @@ const Dashboard = () => {
                 <p className="text-muted-foreground text-sm mb-3">
                   {lang === 'ar' ? 'لا توجد رحلات متاحة لهذا المسار' : 'No rides available for this route'}
                 </p>
-                <Link to="/request-route">
-                  <Button size="sm">{lang === 'ar' ? 'اطلب هذا المسار' : 'Request this route'}</Button>
-                </Link>
+                <Button size="sm" onClick={() => navigate('/request-route', {
+                  state: {
+                    origin: pickup ? { name: pickup.name || '', lat: pickup.lat, lng: pickup.lng } : undefined,
+                    destination: dropoff ? { name: dropoff.name || '', lat: dropoff.lat, lng: dropoff.lng } : undefined,
+                  }
+                })}>{lang === 'ar' ? 'اطلب هذا المسار' : 'Request this route'}</Button>
               </div>
             )}
           </div>
