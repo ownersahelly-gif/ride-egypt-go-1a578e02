@@ -743,7 +743,14 @@ const Dashboard = () => {
           origin={step === 'details' && selectedRide?.routes ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng } : (pickup && dropoff ? pickup : undefined)}
           destination={step === 'details' && selectedRide?.routes ? { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng } : (pickup && dropoff ? dropoff : undefined)}
           showDirections={step === 'details' ? !!selectedRide?.routes : (!!pickup && !!dropoff)}
-          zoom={12}
+          center={
+            step === 'details' && selectedRide?.routes && mapClickTarget === 'dropoff' && dropoffMode === 'nearby'
+              ? { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng }
+              : step === 'details' && selectedRide?.routes && mapClickTarget === 'pickup' && pickupMode === 'nearby'
+              ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng }
+              : undefined
+          }
+          zoom={step === 'details' && isNearbyMode ? 14 : 12}
           showUserLocation
           onMapClick={step === 'details' && isNearbyMode ? handleMapClick : undefined}
           connectionLine={
