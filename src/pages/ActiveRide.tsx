@@ -422,12 +422,21 @@ const ActiveRide = () => {
     toast({ title: lang === 'ar' ? 'تم إنهاء الرحلة ✓' : 'Ride completed! ✓' });
   };
 
-  // Build Google Maps navigation URL with only booked stops
-  const buildGoogleMapsUrl = () => {
-    if (!route || activeStops.length === 0) return null;
-    const origin = `${route.origin_lat},${route.origin_lng}`;
+  const buildGoogleMapsUrl = (stopsOverride?: RouteStop[]) => {
+    if (!route) return null;
+
+    const orderedStops = (stopsOverride && stopsOverride.length > 0)
+      ? stopsOverride
+      : routeStops.length > 0
+        ? routeStops
+        : activeStops.map(({ stop }) => stop);
+
+    const origin = driverLocation
+      ? `${driverLocation.lat},${driverLocation.lng}`
+      : `${route.origin_lat},${route.origin_lng}`;
     const destination = `${route.destination_lat},${route.destination_lng}`;
-    const waypoints = activeStops.map(as => `${as.stop.lat},${as.stop.lng}`).join('|');
+    const waypoints = orderedStops.map(stop => `${stop.lat},${stop.lng}`).join('|');
+
     return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&waypoints=${waypoints}&travelmode=driving`;
   };
 
@@ -557,13 +566,7 @@ const ActiveRide = () => {
 
             {/* Navigate to this stop and remaining stops */}
             <a
-              href={(() => {
-                const remainingStops = activeStops.slice(currentStopIndex);
-                const lastStop = remainingStops[remainingStops.length - 1];
-                const destination = route ? `${route.destination_lat},${route.destination_lng}` : `${lastStop.stop.lat},${lastStop.stop.lng}`;
-                const waypoints = remainingStops.map(as => `${as.stop.lat},${as.stop.lng}`).join('|');
-                return `https://www.google.com/maps/dir/?api=1&destination=${destination}&waypoints=${waypoints}&travelmode=driving`;
-              })()}
+              href={buildGoogleMapsUrl(routeStops.slice(currentStopIndex)) || undefined}
               target="_blank" rel="noopener noreferrer" className="mb-4 block"
             >
               <Button variant="secondary" className="w-full gap-2">
