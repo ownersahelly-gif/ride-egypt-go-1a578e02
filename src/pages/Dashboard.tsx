@@ -679,6 +679,7 @@ const Dashboard = () => {
           markers={mapMarkers}
           origin={step === 'details' && selectedRide?.routes ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng } : (pickup && dropoff ? pickup : undefined)}
           destination={step === 'details' && selectedRide?.routes ? { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng } : (pickup && dropoff ? dropoff : undefined)}
+          waypoints={step === 'details' && selectedRide?.routes ? routeStops.map((s: any) => ({ lat: s.lat, lng: s.lng })) : []}
           showDirections={step === 'details' ? !!selectedRide?.routes : (!!pickup && !!dropoff)}
           zoom={12}
           showUserLocation

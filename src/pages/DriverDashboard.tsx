@@ -772,20 +772,26 @@ const DriverDashboard = () => {
                                 )}
 
                                 {/* Map */}
-                                {slot.routeInfo?.origin_lat && slot.routeInfo?.destination_lat && (
-                                  <MapView
-                                    className="h-44 rounded-xl overflow-hidden"
-                                    markers={[
-                                      { lat: slot.direction === 'go' ? routeOrigin.lat : routeDestination.lat, lng: slot.direction === 'go' ? routeOrigin.lng : routeDestination.lng, label: 'A', color: 'green' },
-                                      { lat: slot.direction === 'go' ? routeDestination.lat : routeOrigin.lat, lng: slot.direction === 'go' ? routeDestination.lng : routeOrigin.lng, label: 'B', color: 'red' },
-                                    ]}
-                                    origin={slot.direction === 'go' ? routeOrigin : routeDestination}
-                                    destination={slot.direction === 'go' ? routeDestination : routeOrigin}
-                                    showDirections
-                                    showUserLocation={false}
-                                    zoom={10}
-                                  />
-                                )}
+                                {slot.routeInfo?.origin_lat && slot.routeInfo?.destination_lat && (() => {
+                                  const slotRouteStops = allRoutes.find((r: any) => r.id === slot.routeId)?.stops || [];
+                                  const sortedSlotStops = [...slotRouteStops].sort((a: any, b: any) => a.stop_order - b.stop_order);
+                                  return (
+                                    <MapView
+                                      className="h-44 rounded-xl overflow-hidden"
+                                      markers={[
+                                        { lat: slot.direction === 'go' ? routeOrigin.lat : routeDestination.lat, lng: slot.direction === 'go' ? routeOrigin.lng : routeDestination.lng, label: 'A', color: 'green' },
+                                        ...sortedSlotStops.map((s: any, i: number) => ({ lat: s.lat, lng: s.lng, label: `${i + 1}`, color: 'blue' as const })),
+                                        { lat: slot.direction === 'go' ? routeDestination.lat : routeOrigin.lat, lng: slot.direction === 'go' ? routeDestination.lng : routeOrigin.lng, label: 'B', color: 'red' },
+                                      ]}
+                                      origin={slot.direction === 'go' ? routeOrigin : routeDestination}
+                                      destination={slot.direction === 'go' ? routeDestination : routeOrigin}
+                                      waypoints={sortedSlotStops.map((s: any) => ({ lat: s.lat, lng: s.lng }))}
+                                      showDirections
+                                      showUserLocation={false}
+                                      zoom={10}
+                                    />
+                                  );
+                                })()}
 
                                 {/* Passengers */}
                                 {slotBookings.length > 0 ? (
