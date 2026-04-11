@@ -52,8 +52,11 @@ const AdminPanel = () => {
   // Stops management
   const [expandedRouteStops, setExpandedRouteStops] = useState<string | null>(null);
   const [routeStopsMap, setRouteStopsMap] = useState<Record<string, any[]>>({});
-  const [stopForm, setStopForm] = useState({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', stop_order: 0 });
+  const [stopForm, setStopForm] = useState({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', stop_order: 0, arrival_time: '' });
   const [addingStop, setAddingStop] = useState(false);
+  const [editingStopId, setEditingStopId] = useState<string | null>(null);
+  const [globalWaitingTime, setGlobalWaitingTime] = useState('3');
+  const [savingWaitingTime, setSavingWaitingTime] = useState(false);
 
   // Route form
   const [showRouteForm, setShowRouteForm] = useState(false);
