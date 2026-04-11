@@ -52,7 +52,7 @@ const AdminPanel = () => {
   // Stops management
   const [expandedRouteStops, setExpandedRouteStops] = useState<string | null>(null);
   const [routeStopsMap, setRouteStopsMap] = useState<Record<string, any[]>>({});
-  const [stopForm, setStopForm] = useState({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', stop_order: 0, arrival_time: '' });
+  const [stopForm, setStopForm] = useState({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', arrival_time: '' });
   const [addingStop, setAddingStop] = useState(false);
   const [editingStopId, setEditingStopId] = useState<string | null>(null);
   const [globalWaitingTime, setGlobalWaitingTime] = useState('3');
@@ -261,7 +261,7 @@ const AdminPanel = () => {
       return;
     }
     setExpandedRouteStops(routeId);
-    setStopForm({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', stop_order: (routeStopsMap[routeId]?.length || 0), arrival_time: '' });
+    setStopForm({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', arrival_time: '' });
     setEditingStopId(null);
     if (!routeStopsMap[routeId]) await fetchStopsForRoute(routeId);
   };
@@ -276,14 +276,14 @@ const AdminPanel = () => {
         lat: stopForm.lat,
         lng: stopForm.lng,
         stop_type: stopForm.stop_type,
-        stop_order: stopForm.stop_order,
+        // keep existing stop_order when editing
         arrival_time: stopForm.arrival_time || null,
       }).eq('id', editingStopId);
       if (error) toast.error(error.message);
       else {
         toast.success(lang === 'ar' ? 'تم تحديث نقطة التوقف' : 'Stop updated');
         setEditingStopId(null);
-        setStopForm({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', stop_order: (routeStopsMap[routeId]?.length || 0), arrival_time: '' });
+        setStopForm({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', arrival_time: '' });
         await fetchStopsForRoute(routeId);
       }
     } else {
@@ -294,13 +294,13 @@ const AdminPanel = () => {
         lat: stopForm.lat,
         lng: stopForm.lng,
         stop_type: stopForm.stop_type,
-        stop_order: stopForm.stop_order,
+        stop_order: routeStopsMap[routeId]?.length || 0,
         arrival_time: stopForm.arrival_time || null,
       });
       if (error) toast.error(error.message);
       else {
         toast.success(lang === 'ar' ? 'تمت إضافة نقطة التوقف' : 'Stop added');
-        setStopForm({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', stop_order: (routeStopsMap[routeId]?.length || 0) + 1, arrival_time: '' });
+        setStopForm({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', arrival_time: '' });
         await fetchStopsForRoute(routeId);
       }
     }
@@ -315,7 +315,7 @@ const AdminPanel = () => {
       lat: stop.lat,
       lng: stop.lng,
       stop_type: stop.stop_type,
-      stop_order: stop.stop_order,
+      
       arrival_time: stop.arrival_time || '',
     });
   };
@@ -336,8 +336,29 @@ const AdminPanel = () => {
     if (error) toast.error(error.message);
     else {
       toast.success(lang === 'ar' ? 'تم حذف نقطة التوقف' : 'Stop deleted');
+      // Re-order remaining stops
+      const remaining = (routeStopsMap[routeId] || []).filter(s => s.id !== stopId);
+      for (let i = 0; i < remaining.length; i++) {
+        if (remaining[i].stop_order !== i) {
+          await supabase.from('stops').update({ stop_order: i }).eq('id', remaining[i].id);
+        }
+      }
       await fetchStopsForRoute(routeId);
     }
+  };
+
+  const moveStop = async (routeId: string, index: number, direction: 'up' | 'down') => {
+    const stops = [...(routeStopsMap[routeId] || [])];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= stops.length) return;
+    // Swap stop_order values
+    const currentStop = stops[index];
+    const targetStop = stops[targetIndex];
+    await Promise.all([
+      supabase.from('stops').update({ stop_order: targetIndex }).eq('id', currentStop.id),
+      supabase.from('stops').update({ stop_order: index }).eq('id', targetStop.id),
+    ]);
+    await fetchStopsForRoute(routeId);
   };
 
 
@@ -760,6 +781,12 @@ const AdminPanel = () => {
                               </div>
                             </div>
                             <div className="flex items-center gap-1">
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground" disabled={idx === 0} onClick={() => moveStop(route.id, idx, 'up')}>
+                                <ChevronLeft className="w-3.5 h-3.5 rotate-90" />
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground" disabled={idx === (routeStopsMap[route.id] || []).length - 1} onClick={() => moveStop(route.id, idx, 'down')}>
+                                <ChevronLeft className="w-3.5 h-3.5 -rotate-90" />
+                              </Button>
                               <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-primary" onClick={() => startEditStop(stop)}>
                                 <Edit className="w-3.5 h-3.5" />
                               </Button>
@@ -800,10 +827,6 @@ const AdminPanel = () => {
                           </select>
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-xs">{lang === 'ar' ? 'الترتيب' : 'Order'}</Label>
-                          <Input type="number" value={stopForm.stop_order} onChange={e => setStopForm(p => ({ ...p, stop_order: parseInt(e.target.value) || 0 }))} className="h-9 text-sm" />
-                        </div>
-                        <div className="space-y-1">
                           <Label className="text-xs flex items-center gap-1"><Clock className="w-3 h-3" /> {lang === 'ar' ? 'وقت الوصول' : 'Arrival Time'}</Label>
                           <Input type="time" value={stopForm.arrival_time} onChange={e => setStopForm(p => ({ ...p, arrival_time: e.target.value }))} className="h-9 text-sm" />
                         </div>
@@ -842,7 +865,7 @@ const AdminPanel = () => {
                           {editingStopId ? (lang === 'ar' ? 'تحديث' : 'Update Stop') : (lang === 'ar' ? 'إضافة' : 'Add Stop')}
                         </Button>
                         {editingStopId && (
-                          <Button size="sm" variant="outline" onClick={() => { setEditingStopId(null); setStopForm({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', stop_order: (routeStopsMap[route.id]?.length || 0), arrival_time: '' }); }}>
+                          <Button size="sm" variant="outline" onClick={() => { setEditingStopId(null); setStopForm({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', arrival_time: '' }); }}>
                             {lang === 'ar' ? 'إلغاء' : 'Cancel'}
                           </Button>
                         )}
