@@ -499,25 +499,26 @@ const TrackShuttle = () => {
           <div className="absolute inset-0 bg-background/50 flex items-center justify-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
           </div>
-            )}
-
-            {/* Stop-based location status */}
-            {driverStopStatus && !isBoarded && (
-              <div className="bg-accent px-5 py-2.5 flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-accent-foreground" />
-                <p className="text-accent-foreground text-sm font-medium">
-                  {driverStopStatus.atStopId
-                    ? (lang === 'ar'
-                      ? `📍 السائق عند: ${driverStopStatus.atStopNameAr}`
-                      : `📍 Driver at: ${driverStopStatus.atStopNameEn}`)
-                    : driverStopStatus.headingToStopId
-                      ? (lang === 'ar'
-                        ? `🚐 متجه إلى: ${driverStopStatus.headingToStopNameAr}`
-                        : `🚐 Heading to: ${driverStopStatus.headingToStopNameEn}`)
-                      : ''}
-                </p>
-              </div>
+        )}
       </div>
+
+      {/* Stop-based location status */}
+      {driverStopStatus && !isBoarded && (
+        <div className="bg-accent px-5 py-2.5 flex items-center gap-2">
+          <MapPin className="w-4 h-4 text-accent-foreground" />
+          <p className="text-accent-foreground text-sm font-medium">
+            {driverStopStatus.atStopId
+              ? (lang === 'ar'
+                ? `📍 السائق عند: ${driverStopStatus.atStopNameAr}`
+                : `📍 Driver at: ${driverStopStatus.atStopNameEn}`)
+              : driverStopStatus.headingToStopId
+                ? (lang === 'ar'
+                  ? `🚐 متجه إلى: ${driverStopStatus.headingToStopNameAr}`
+                  : `🚐 Heading to: ${driverStopStatus.headingToStopNameEn}`)
+                : ''}
+          </p>
+        </div>
+      )}
 
       {/* Card below map — full width, scrollable */}
       {booking && !loading && (
