@@ -1016,6 +1016,7 @@ export type Database = {
       }
       stops: {
         Row: {
+          arrival_time: string | null
           created_at: string
           id: string
           lat: number
@@ -1027,6 +1028,7 @@ export type Database = {
           stop_type: string
         }
         Insert: {
+          arrival_time?: string | null
           created_at?: string
           id?: string
           lat: number
@@ -1038,6 +1040,7 @@ export type Database = {
           stop_type?: string
         }
         Update: {
+          arrival_time?: string | null
           created_at?: string
           id?: string
           lat?: number

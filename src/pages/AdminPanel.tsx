@@ -52,8 +52,11 @@ const AdminPanel = () => {
   // Stops management
   const [expandedRouteStops, setExpandedRouteStops] = useState<string | null>(null);
   const [routeStopsMap, setRouteStopsMap] = useState<Record<string, any[]>>({});
-  const [stopForm, setStopForm] = useState({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', stop_order: 0 });
+  const [stopForm, setStopForm] = useState({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', stop_order: 0, arrival_time: '' });
   const [addingStop, setAddingStop] = useState(false);
+  const [editingStopId, setEditingStopId] = useState<string | null>(null);
+  const [globalWaitingTime, setGlobalWaitingTime] = useState('3');
+  const [savingWaitingTime, setSavingWaitingTime] = useState(false);
 
   // Route form
   const [showRouteForm, setShowRouteForm] = useState(false);
@@ -101,6 +104,9 @@ const AdminPanel = () => {
     }
 
     if (settingsRes.data) setInstapayPhone(settingsRes.data.value);
+    // Fetch global waiting time
+    const { data: waitData } = await supabase.from('app_settings').select('value').eq('key', 'stop_waiting_time_minutes').single();
+    if (waitData) setGlobalWaitingTime(waitData.value);
     setBundles(bundlesRes.data || []);
     const cvs = carpoolVerRes.data || [];
     setCarpoolVerifications(cvs);
@@ -255,29 +261,74 @@ const AdminPanel = () => {
       return;
     }
     setExpandedRouteStops(routeId);
-    setStopForm({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', stop_order: (routeStopsMap[routeId]?.length || 0) });
+    setStopForm({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', stop_order: (routeStopsMap[routeId]?.length || 0), arrival_time: '' });
+    setEditingStopId(null);
     if (!routeStopsMap[routeId]) await fetchStopsForRoute(routeId);
   };
 
   const addStop = async (routeId: string) => {
     if (!stopForm.name_en || !stopForm.name_ar) return;
     setAddingStop(true);
-    const { error } = await supabase.from('stops').insert({
-      route_id: routeId,
-      name_en: stopForm.name_en,
-      name_ar: stopForm.name_ar,
-      lat: stopForm.lat,
-      lng: stopForm.lng,
-      stop_type: stopForm.stop_type,
-      stop_order: stopForm.stop_order,
-    });
-    if (error) toast.error(error.message);
-    else {
-      toast.success(lang === 'ar' ? 'تمت إضافة نقطة التوقف' : 'Stop added');
-      setStopForm({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', stop_order: (routeStopsMap[routeId]?.length || 0) + 1 });
-      await fetchStopsForRoute(routeId);
+    if (editingStopId) {
+      const { error } = await supabase.from('stops').update({
+        name_en: stopForm.name_en,
+        name_ar: stopForm.name_ar,
+        lat: stopForm.lat,
+        lng: stopForm.lng,
+        stop_type: stopForm.stop_type,
+        stop_order: stopForm.stop_order,
+        arrival_time: stopForm.arrival_time || null,
+      }).eq('id', editingStopId);
+      if (error) toast.error(error.message);
+      else {
+        toast.success(lang === 'ar' ? 'تم تحديث نقطة التوقف' : 'Stop updated');
+        setEditingStopId(null);
+        setStopForm({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', stop_order: (routeStopsMap[routeId]?.length || 0), arrival_time: '' });
+        await fetchStopsForRoute(routeId);
+      }
+    } else {
+      const { error } = await supabase.from('stops').insert({
+        route_id: routeId,
+        name_en: stopForm.name_en,
+        name_ar: stopForm.name_ar,
+        lat: stopForm.lat,
+        lng: stopForm.lng,
+        stop_type: stopForm.stop_type,
+        stop_order: stopForm.stop_order,
+        arrival_time: stopForm.arrival_time || null,
+      });
+      if (error) toast.error(error.message);
+      else {
+        toast.success(lang === 'ar' ? 'تمت إضافة نقطة التوقف' : 'Stop added');
+        setStopForm({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', stop_order: (routeStopsMap[routeId]?.length || 0) + 1, arrival_time: '' });
+        await fetchStopsForRoute(routeId);
+      }
     }
     setAddingStop(false);
+  };
+
+  const startEditStop = (stop: any) => {
+    setEditingStopId(stop.id);
+    setStopForm({
+      name_en: stop.name_en,
+      name_ar: stop.name_ar,
+      lat: stop.lat,
+      lng: stop.lng,
+      stop_type: stop.stop_type,
+      stop_order: stop.stop_order,
+      arrival_time: stop.arrival_time || '',
+    });
+  };
+
+  const saveGlobalWaitingTime = async () => {
+    setSavingWaitingTime(true);
+    const { error } = await supabase.from('app_settings').upsert(
+      { key: 'stop_waiting_time_minutes', value: globalWaitingTime },
+      { onConflict: 'key' }
+    );
+    if (error) toast.error(error.message);
+    else toast.success(lang === 'ar' ? 'تم حفظ وقت الانتظار' : 'Waiting time saved');
+    setSavingWaitingTime(false);
   };
 
   const deleteStop = async (stopId: string, routeId: string) => {
@@ -704,12 +755,18 @@ const AdminPanel = () => {
                                 <p className="text-xs text-muted-foreground">
                                   {stop.stop_type === 'both' ? '↕ Pickup & Dropoff' : stop.stop_type === 'pickup' ? '🟢 Pickup only' : '🔴 Dropoff only'}
                                   {' · '}{stop.lat.toFixed(4)}, {stop.lng.toFixed(4)}
+                                  {stop.arrival_time && <> · <Clock className="w-3 h-3 inline" /> {stop.arrival_time}</>}
                                 </p>
                               </div>
                             </div>
-                            <Button size="sm" variant="ghost" className="text-destructive h-7 w-7 p-0" onClick={() => deleteStop(stop.id, route.id)}>
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-primary" onClick={() => startEditStop(stop)}>
+                                <Edit className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button size="sm" variant="ghost" className="text-destructive h-7 w-7 p-0" onClick={() => deleteStop(stop.id, route.id)}>
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -717,9 +774,13 @@ const AdminPanel = () => {
                       <p className="text-sm text-muted-foreground">{lang === 'ar' ? 'لا توجد نقاط توقف بعد' : 'No stops yet. Add stops below.'}</p>
                     )}
 
-                    {/* Add stop form */}
+                    {/* Add/Edit stop form */}
                     <div className="bg-surface rounded-xl p-4 space-y-3 border border-border">
-                      <p className="text-sm font-medium text-foreground">{lang === 'ar' ? 'إضافة نقطة توقف' : 'Add New Stop'}</p>
+                      <p className="text-sm font-medium text-foreground">
+                        {editingStopId
+                          ? (lang === 'ar' ? 'تعديل نقطة التوقف' : 'Edit Stop')
+                          : (lang === 'ar' ? 'إضافة نقطة توقف' : 'Add New Stop')}
+                      </p>
                       <div className="grid sm:grid-cols-2 gap-3">
                         <div className="space-y-1">
                           <Label className="text-xs">Name (EN)</Label>
@@ -742,6 +803,10 @@ const AdminPanel = () => {
                           <Label className="text-xs">{lang === 'ar' ? 'الترتيب' : 'Order'}</Label>
                           <Input type="number" value={stopForm.stop_order} onChange={e => setStopForm(p => ({ ...p, stop_order: parseInt(e.target.value) || 0 }))} className="h-9 text-sm" />
                         </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs flex items-center gap-1"><Clock className="w-3 h-3" /> {lang === 'ar' ? 'وقت الوصول' : 'Arrival Time'}</Label>
+                          <Input type="time" value={stopForm.arrival_time} onChange={e => setStopForm(p => ({ ...p, arrival_time: e.target.value }))} className="h-9 text-sm" />
+                        </div>
                       </div>
                       <div className="space-y-2">
                         <Label className="text-xs flex items-center gap-1"><Search className="w-3 h-3" /> {lang === 'ar' ? 'ابحث عن الموقع' : 'Search location'}</Label>
@@ -750,16 +815,20 @@ const AdminPanel = () => {
                           onSelect={(place) => setStopForm(p => ({ ...p, lat: parseFloat(place.lat.toFixed(6)), lng: parseFloat(place.lng.toFixed(6)), name_en: p.name_en || place.name, name_ar: p.name_ar || place.name }))}
                           iconColor="text-primary"
                         />
-                        <div className="h-[250px] w-full overflow-hidden rounded-lg border border-border bg-muted">
+                        <div className="h-[300px] w-full overflow-hidden rounded-lg border border-border bg-muted">
                           <MapView
                             className="h-full w-full"
                             center={stopForm.lat !== 0 ? { lat: stopForm.lat, lng: stopForm.lng } : { lat: route.origin_lat, lng: route.origin_lng }}
-                            zoom={stopForm.lat !== 0 ? 16 : 12}
+                            zoom={stopForm.lat !== 0 ? 15 : 11}
+                            origin={{ lat: route.origin_lat, lng: route.origin_lng }}
+                            destination={{ lat: route.destination_lat, lng: route.destination_lng }}
+                            waypoints={(routeStopsMap[route.id] || []).map((s: any) => ({ lat: s.lat, lng: s.lng }))}
+                            showDirections={true}
                             markers={[
                               { lat: route.origin_lat, lng: route.origin_lng, label: 'A', color: 'green' },
                               { lat: route.destination_lat, lng: route.destination_lng, label: 'B', color: 'red' },
-                              ...(stopForm.lat !== 0 ? [{ lat: stopForm.lat, lng: stopForm.lng, label: '📍', color: 'blue' as const }] : []),
-                              ...(routeStopsMap[route.id] || []).map((s: any, i: number) => ({ lat: s.lat, lng: s.lng, label: (i + 1).toString(), color: 'blue' as const })),
+                              ...(stopForm.lat !== 0 ? [{ lat: stopForm.lat, lng: stopForm.lng, label: '📍', color: 'orange' as const }] : []),
+                              ...(routeStopsMap[route.id] || []).map((s: any, i: number) => ({ lat: s.lat, lng: s.lng, label: `${i + 1}`, color: 'blue' as const })),
                             ]}
                             onMapClick={(lat, lng) => setStopForm(p => ({ ...p, lat: parseFloat(lat.toFixed(6)), lng: parseFloat(lng.toFixed(6)) }))}
                             showUserLocation={false}
@@ -767,10 +836,17 @@ const AdminPanel = () => {
                         </div>
                         {stopForm.lat !== 0 && <p className="text-xs text-muted-foreground">{stopForm.lat.toFixed(4)}, {stopForm.lng.toFixed(4)}</p>}
                       </div>
-                      <Button size="sm" onClick={() => addStop(route.id)} disabled={!stopForm.name_en || !stopForm.name_ar || stopForm.lat === 0 || addingStop}>
-                        {addingStop ? <Loader2 className="w-3.5 h-3.5 animate-spin me-1" /> : <Plus className="w-3.5 h-3.5 me-1" />}
-                        {lang === 'ar' ? 'إضافة' : 'Add Stop'}
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => addStop(route.id)} disabled={!stopForm.name_en || !stopForm.name_ar || stopForm.lat === 0 || addingStop}>
+                          {addingStop ? <Loader2 className="w-3.5 h-3.5 animate-spin me-1" /> : editingStopId ? <Edit className="w-3.5 h-3.5 me-1" /> : <Plus className="w-3.5 h-3.5 me-1" />}
+                          {editingStopId ? (lang === 'ar' ? 'تحديث' : 'Update Stop') : (lang === 'ar' ? 'إضافة' : 'Add Stop')}
+                        </Button>
+                        {editingStopId && (
+                          <Button size="sm" variant="outline" onClick={() => { setEditingStopId(null); setStopForm({ name_en: '', name_ar: '', lat: 0, lng: 0, stop_type: 'both', stop_order: (routeStopsMap[route.id]?.length || 0), arrival_time: '' }); }}>
+                            {lang === 'ar' ? 'إلغاء' : 'Cancel'}
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1054,8 +1130,34 @@ const AdminPanel = () => {
                         v.status === 'rejected' ? 'bg-destructive/10 text-destructive' :
                         'bg-secondary/20 text-secondary'
                       }`}>{v.status}</span>
-                    </div>
+            </div>
 
+            {/* Global Stop Waiting Time */}
+            <div className="bg-card border border-border rounded-xl p-6 max-w-lg">
+              <h3 className="font-semibold text-foreground mb-1 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-primary" />
+                {lang === 'ar' ? 'وقت انتظار الباص في المحطة' : 'Bus Waiting Time at Stops'}
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                {lang === 'ar'
+                  ? 'عدد الدقائق التي ينتظرها الباص في كل محطة (ينطبق على جميع المسارات)'
+                  : 'How many minutes the bus waits at each stop (applies to all routes globally)'}
+              </p>
+              <div className="flex gap-2 items-center">
+                <Input
+                  type="number"
+                  min="1"
+                  max="30"
+                  value={globalWaitingTime}
+                  onChange={(e) => setGlobalWaitingTime(e.target.value)}
+                  className="w-24 font-mono"
+                />
+                <span className="text-sm text-muted-foreground">{lang === 'ar' ? 'دقائق' : 'minutes'}</span>
+                <Button onClick={saveGlobalWaitingTime} disabled={savingWaitingTime}>
+                  {savingWaitingTime ? <Loader2 className="w-4 h-4 animate-spin" /> : (lang === 'ar' ? 'حفظ' : 'Save')}
+                </Button>
+              </div>
+            </div>
                     <div className="grid grid-cols-2 gap-3 mb-3 text-sm">
                       <div><span className="text-muted-foreground">{lang === 'ar' ? 'اللوحة:' : 'Plate:'}</span> <span className="font-medium">{v.license_plate}</span></div>
                       <div><span className="text-muted-foreground">{lang === 'ar' ? 'السيارة:' : 'Vehicle:'}</span> <span className="font-medium">{v.vehicle_model}</span></div>
