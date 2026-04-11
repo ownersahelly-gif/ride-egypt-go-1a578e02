@@ -265,28 +265,37 @@ const ActiveRide = () => {
     if (!shuttle?.id) return;
 
     let lastDbUpdate = 0;
-    const DB_THROTTLE_MS = 5000;
-    const BROADCAST_THROTTLE_MS = 1000;
-    let lastBroadcast = 0;
+    const DB_THROTTLE_MS = 3000; // Write to DB every 3s for Realtime subscribers
     let cancelled = false;
+    let prevLat = 0;
+    let prevLng = 0;
+    const MIN_MOVE_M = 3; // Skip updates if moved less than 3m (noise filter)
 
     const broadcastChannel = supabase.channel(`shuttle-live-${shuttle.id}`);
     broadcastChannel.subscribe();
 
-    const handleLocation = (lat: number, lng: number) => {
+    const handleLocation = (lat: number, lng: number, speed: number | null, heading: number | null) => {
       if (cancelled) return;
+
+      // Filter GPS noise — skip if moved less than 3 meters
+      if (prevLat && prevLng) {
+        const moved = haversineDistance({ lat: prevLat, lng: prevLng }, { lat, lng });
+        if (moved < MIN_MOVE_M) return;
+      }
+      prevLat = lat;
+      prevLng = lng;
+
       setDriverLocation({ lat, lng });
       const now = Date.now();
 
-      if (now - lastBroadcast >= BROADCAST_THROTTLE_MS) {
-        lastBroadcast = now;
-        broadcastChannel.send({
-          type: 'broadcast',
-          event: 'driver-location',
-          payload: { lat, lng, ts: now },
-        });
-      }
+      // Always broadcast immediately for real-time passenger tracking
+      broadcastChannel.send({
+        type: 'broadcast',
+        event: 'driver-location',
+        payload: { lat, lng, ts: now, speed, heading },
+      });
 
+      // Write to DB periodically for Realtime postgres_changes subscribers
       if (now - lastDbUpdate >= DB_THROTTLE_MS) {
         lastDbUpdate = now;
         supabase.from('shuttles').update({
@@ -298,13 +307,18 @@ const ActiveRide = () => {
     const isNative = Capacitor.isNativePlatform();
 
     if (isNative) {
-      // Use Capacitor native GPS — accurate and not throttled in background
+      // Capacitor native GPS — accurate, fast, works in background on iOS
       let watchId: string | undefined;
       Geolocation.watchPosition(
-        { enableHighAccuracy: true, timeout: 10000, minimumUpdateInterval: 1000 },
+        { enableHighAccuracy: true, timeout: 10000, minimumUpdateInterval: 500 },
         (position, err) => {
           if (position && !err) {
-            handleLocation(position.coords.latitude, position.coords.longitude);
+            handleLocation(
+              position.coords.latitude,
+              position.coords.longitude,
+              position.coords.speed,
+              position.coords.heading
+            );
           }
         }
       ).then(id => { watchId = id; });
@@ -315,11 +329,16 @@ const ActiveRide = () => {
         supabase.removeChannel(broadcastChannel);
       };
     } else {
-      // Browser fallback
+      // Browser fallback with aggressive polling
       if (!navigator.geolocation) return;
 
       const updateLocation = (pos: GeolocationPosition) => {
-        handleLocation(pos.coords.latitude, pos.coords.longitude);
+        handleLocation(
+          pos.coords.latitude,
+          pos.coords.longitude,
+          pos.coords.speed,
+          pos.coords.heading
+        );
       };
 
       const watchId = navigator.geolocation.watchPosition(
@@ -327,6 +346,7 @@ const ActiveRide = () => {
         { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
       );
 
+      // Aggressive polling every 2s as browser watchPosition can be unreliable
       const intervalId = setInterval(() => {
         navigator.geolocation.getCurrentPosition(
           updateLocation, () => {},

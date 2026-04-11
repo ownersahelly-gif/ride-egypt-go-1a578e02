@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import RideChat from '@/components/RideChat';
 import { useToast } from '@/hooks/use-toast';
+import { useSmoothMarker } from '@/hooks/useSmoothMarker';
 
 interface PassengerStop {
   userId: string;
@@ -58,7 +59,9 @@ const TrackShuttle = () => {
   const [rideBookings, setRideBookings] = useState<any[]>([]);
   const [passengerStops, setPassengerStops] = useState<PassengerStop[]>([]);
 
-  // ETA
+  // Smooth marker interpolation for driver position
+  const { position: smoothDriverPos, updatePosition: updateSmoothPos } = useSmoothMarker(1200);
+
   const [etaMinutes, setEtaMinutes] = useState<number | null>(null);
   const [stopsBeforeYou, setStopsBeforeYou] = useState(0);
   const [notificationSent, setNotificationSent] = useState(false);
@@ -314,6 +317,7 @@ const TrackShuttle = () => {
         const { lat, lng, stopId, stopNameEn, stopNameAr, stopIndex, headingToStopId, headingToStopNameEn, headingToStopNameAr, headingToStopIndex } = payload.payload;
         if (lat && lng) {
           setShuttle((prev: any) => ({ ...prev, current_lat: lat, current_lng: lng, status: 'active' }));
+          updateSmoothPos({ lat, lng });
           setIsLive(true);
         }
         // Update stop-based status from boarding code anchoring
@@ -351,7 +355,11 @@ const TrackShuttle = () => {
         table: 'shuttles',
         filter: `id=eq.${shuttle.id}`,
       }, (payload) => {
-        setShuttle((prev: any) => ({ ...prev, ...payload.new }));
+        const newData = payload.new as any;
+        setShuttle((prev: any) => ({ ...prev, ...newData }));
+        if (newData.current_lat && newData.current_lng) {
+          updateSmoothPos({ lat: newData.current_lat, lng: newData.current_lng });
+        }
       })
       .subscribe();
 
@@ -373,7 +381,7 @@ const TrackShuttle = () => {
 
   // Determine if trip has started based on shuttle status (driver sets it to 'active' when starting)
   const shuttleIsActive = shuttle?.status === 'active';
-  const hasLiveGps = !!(shuttle?.current_lat && shuttle?.current_lng && shuttleIsActive);
+  const hasLiveGps = !!(smoothDriverPos && shuttleIsActive);
   const isBoarded = booking?.status === 'boarded';
 
   // Build tracking markers: shuttle → stops before user → YOU
@@ -388,9 +396,9 @@ const TrackShuttle = () => {
 
   const markers: { lat: number; lng: number; label?: string; color?: 'red' | 'green' | 'blue' | 'orange' | 'purple' }[] = [];
 
-  // Shuttle marker — only show if trip has started
-  if (hasLiveGps) {
-    markers.push({ lat: shuttle.current_lat, lng: shuttle.current_lng, label: '🚐', color: 'blue' });
+  // Shuttle marker — use smoothly interpolated position
+  if (hasLiveGps && smoothDriverPos) {
+    markers.push({ lat: smoothDriverPos.lat, lng: smoothDriverPos.lng, label: '🚐', color: 'blue' });
   }
 
   // Intermediate stop markers (other passengers' pickups before the user)
@@ -404,8 +412,8 @@ const TrackShuttle = () => {
   }
 
   // Directions: shuttle → (intermediate stops) → user's pickup (only when live)
-  const trackOrigin = hasLiveGps
-    ? { lat: shuttle.current_lat, lng: shuttle.current_lng } : undefined;
+  const trackOrigin = (hasLiveGps && smoothDriverPos)
+    ? { lat: smoothDriverPos.lat, lng: smoothDriverPos.lng } : undefined;
   const trackDestination = (myPickupLat && myPickupLng)
     ? { lat: myPickupLat, lng: myPickupLng } : undefined;
   const trackWaypoints = stopsBeforeMe.map(s => ({ lat: s.lat, lng: s.lng }));
