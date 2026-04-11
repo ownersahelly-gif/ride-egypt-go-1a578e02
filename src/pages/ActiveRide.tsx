@@ -441,6 +441,9 @@ const ActiveRide = () => {
   };
 
   const currentActive = activeStops[currentStopIndex] || null;
+  const currentRouteStopIndex = currentActive
+    ? Math.max(routeStops.findIndex(stop => stop.id === currentActive.stop.id), 0)
+    : 0;
   const boardedCount = bookings.filter(b => b.status === 'boarded').length;
   const totalCount = bookings.length;
   const allCompleted = totalCount > 0 && bookings.every(b => b.status === 'completed' || b.status === 'cancelled');
@@ -566,7 +569,7 @@ const ActiveRide = () => {
 
             {/* Navigate to this stop and remaining stops */}
             <a
-              href={buildGoogleMapsUrl(routeStops.slice(currentStopIndex)) || undefined}
+              href={buildGoogleMapsUrl(routeStops.slice(currentRouteStopIndex)) || undefined}
               target="_blank" rel="noopener noreferrer" className="mb-4 block"
             >
               <Button variant="secondary" className="w-full gap-2">
