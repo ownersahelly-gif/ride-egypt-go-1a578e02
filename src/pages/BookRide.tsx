@@ -124,6 +124,9 @@ const BookRide = () => {
   // Route directions result for on-route checking
   const [routeDirections, setRouteDirections] = useState<any>(null);
 
+  // Route stops for waypoints
+  const [routeStops, setRouteStops] = useState<any[]>([]);
+
   // Saved locations
   const [savedLocations, setSavedLocations] = useState<any[]>([]);
 
@@ -185,14 +188,19 @@ const BookRide = () => {
   useEffect(() => {
     if (!selectedRide?.routes || typeof google === 'undefined' || !google?.maps?.DirectionsService) { setRouteDirections(null); return; }
     const ds = new google.maps.DirectionsService();
+    const wps = routeStops.map((s: any) => ({
+      location: new google.maps.LatLng(s.lat, s.lng),
+      stopover: true,
+    }));
     ds.route({
       origin: { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng },
       destination: { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng },
+      waypoints: wps.length > 0 ? wps : undefined,
       travelMode: google.maps.TravelMode.DRIVING,
     }, (result, status) => {
       if (status === 'OK' && result) setRouteDirections(result);
     });
-  }, [selectedRide?.route_id]);
+  }, [selectedRide?.route_id, routeStops]);
 
   const selectRide = async (ride: any) => {
     setSelectedRide(ride);
@@ -207,6 +215,14 @@ const BookRide = () => {
     setUseBundle(false);
     setTripDirection('both');
     setStep('details');
+
+    // Fetch stops for this route
+    const { data: stops } = await supabase
+      .from('stops')
+      .select('*')
+      .eq('route_id', ride.route_id)
+      .order('stop_order');
+    setRouteStops(stops || []);
 
     if (user && ride.route_id) {
       // Fetch saved locations, bundles, and active bundle purchases in parallel
@@ -1021,6 +1037,7 @@ const BookRide = () => {
                     markers={mapMarkers}
                     origin={selectedRide.routes ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng } : undefined}
                     destination={selectedRide.routes ? { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng } : undefined}
+                    waypoints={routeStops.map((s: any) => ({ lat: s.lat, lng: s.lng }))}
                     showDirections={!!selectedRide.routes}
                     zoom={12}
                     showUserLocation={false}
