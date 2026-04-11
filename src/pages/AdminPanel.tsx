@@ -738,8 +738,8 @@ const AdminPanel = () => {
                         />
                         <MapView
                           className="h-[200px] rounded-lg overflow-hidden"
-                          center={{ lat: stopForm.lat || route.origin_lat, lng: stopForm.lng || route.origin_lng }}
-                          zoom={stopForm.lat ? 16 : 13}
+                          center={stopForm.lat !== 0 ? { lat: stopForm.lat, lng: stopForm.lng } : { lat: route.origin_lat, lng: route.origin_lng }}
+                          zoom={stopForm.lat !== 0 ? 16 : 12}
                           markers={[
                             { lat: route.origin_lat, lng: route.origin_lng, label: 'A', color: 'green' },
                             { lat: route.destination_lat, lng: route.destination_lng, label: 'B', color: 'red' },
