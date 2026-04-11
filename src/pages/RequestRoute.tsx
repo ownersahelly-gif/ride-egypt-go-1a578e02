@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { ChevronLeft, ChevronRight, MapPin, Navigation, Calendar } from 'lucide-react';
 import PlacesAutocomplete from '@/components/PlacesAutocomplete';
-import MapView from '@/components/MapView';
+import MapPinPicker from '@/components/MapPinPicker';
 
 type Location = { name: string; lat: number; lng: number };
 
@@ -49,14 +49,10 @@ const RequestRoute = () => {
   const selectWeekend = () => setPreferredDays([5, 6]);
   const selectAll = () => setPreferredDays([0, 1, 2, 3, 4, 5, 6]);
 
-  const handleMapClick = (lat: number, lng: number) => {
-    if (!activePin) return;
-    const label = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-    if (activePin === 'origin') {
-      setOrigin({ name: label, lat, lng });
-    } else {
-      setDestination({ name: label, lat, lng });
-    }
+  const handlePinConfirm = (type: 'origin' | 'destination', loc: { lat: number; lng: number; name: string }) => {
+    if (type === 'origin') setOrigin(loc);
+    else setDestination(loc);
+    setActivePin(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -85,15 +81,6 @@ const RequestRoute = () => {
     }
   };
 
-  const markers = [
-    ...(origin.lat ? [{ lat: origin.lat, lng: origin.lng, label: 'A', color: 'green' as const }] : []),
-    ...(destination.lat ? [{ lat: destination.lat, lng: destination.lng, label: 'B', color: 'red' as const }] : []),
-  ];
-
-  const mapCenter = origin.lat ? { lat: origin.lat, lng: origin.lng }
-    : destination.lat ? { lat: destination.lat, lng: destination.lng }
-    : undefined;
-
   return (
     <div className="min-h-screen bg-surface">
       <header className="bg-card border-b border-border sticky top-0 z-40">
@@ -105,28 +92,14 @@ const RequestRoute = () => {
 
       <main className="container mx-auto px-4 py-8 max-w-2xl space-y-6">
         {/* Map */}
-        <div className="bg-card rounded-2xl border border-border overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-            <MapPin className="w-4 h-4 text-primary" />
-            <p className="text-sm text-muted-foreground">
-              {activePin === 'origin'
-                ? (lang === 'ar' ? 'انقر على الخريطة لتحديد نقطة الانطلاق' : 'Click the map to set pickup location')
-                : activePin === 'destination'
-                ? (lang === 'ar' ? 'انقر على الخريطة لتحديد نقطة الوصول' : 'Click the map to set drop-off location')
-                : (lang === 'ar' ? 'اختر زر "تحديد على الخريطة" أدناه أو ابحث بالنص' : 'Use "Pick on map" buttons below, or search by text')}
-            </p>
-          </div>
-          <MapView
-            className="h-[350px]"
-            markers={markers}
-            center={mapCenter}
-            zoom={13}
-            onMapClick={handleMapClick}
-            origin={origin.lat && destination.lat ? origin : undefined}
-            destination={origin.lat && destination.lat ? destination : undefined}
-            showDirections={!!(origin.lat && destination.lat)}
-          />
-        </div>
+        <MapPinPicker
+          className="h-[350px] border border-border rounded-2xl"
+          activePin={activePin}
+          origin={origin.lat ? origin : undefined}
+          destination={destination.lat ? destination : undefined}
+          onConfirm={handlePinConfirm}
+          onCancel={() => setActivePin(null)}
+        />
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="bg-card rounded-2xl border border-border p-6 space-y-5">
