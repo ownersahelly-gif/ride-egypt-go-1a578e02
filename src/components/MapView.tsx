@@ -187,8 +187,11 @@ const MapView = ({
           let labelOrigin: google.maps.Point | undefined;
 
           if (isShuttle) {
-            svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" fill="${fill}" stroke="white" stroke-width="3"/><text x="22" y="29" text-anchor="middle" fill="white" font-size="20">🚐</text></svg>`;
-            size = new google.maps.Size(44, 44);
+            // Small numbered circle for bus stops
+            svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="12" fill="${fill}" stroke="white" stroke-width="2"/></svg>`;
+            size = new google.maps.Size(28, 28);
+            anchor = new google.maps.Point(14, 14);
+            labelOrigin = new google.maps.Point(14, 14);
           } else if (isYou) {
             // Big prominent "YOU" marker with pulsing ring
             svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="66" viewBox="0 0 56 66"><circle cx="28" cy="28" r="26" fill="${fill}" opacity="0.2"/><circle cx="28" cy="28" r="18" fill="${fill}" stroke="white" stroke-width="3"/><path d="M28 46 L28 62" stroke="${fill}" stroke-width="3"/><circle cx="28" cy="62" r="3" fill="${fill}"/></svg>`;
@@ -196,17 +199,19 @@ const MapView = ({
             anchor = new google.maps.Point(28, 62);
             labelOrigin = new google.maps.Point(28, 28);
           } else {
-            svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 32 42"><path d="M16 0C7.2 0 0 7.2 0 16c0 12 16 26 16 26s16-14 16-26C32 7.2 24.8 0 16 0z" fill="${fill}" stroke="white" stroke-width="2"/><circle cx="16" cy="16" r="10" fill="white" opacity="0.3"/></svg>`;
-            size = new google.maps.Size(28, 36);
-            anchor = new google.maps.Point(14, 36);
-            labelOrigin = new google.maps.Point(16, 16);
+            // Large pin for A/B origin/destination
+            svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="52" viewBox="0 0 40 52"><path d="M20 0C9 0 0 9 0 20c0 15 20 32 20 32s20-17 20-32C40 9 31 0 20 0z" fill="${fill}" stroke="white" stroke-width="2.5"/><circle cx="20" cy="20" r="12" fill="white" opacity="0.3"/></svg>`;
+            size = new google.maps.Size(40, 52);
+            anchor = new google.maps.Point(20, 52);
+            labelOrigin = new google.maps.Point(20, 20);
           }
 
           return (
             <Marker
               key={i}
               position={{ lat: marker.lat, lng: marker.lng }}
-              label={!isShuttle && marker.label ? { text: marker.label, color: 'white', fontWeight: 'bold', fontSize: isYou ? '13px' : '11px' } : undefined}
+              zIndex={isShuttle ? 1 : 10}
+              label={marker.label ? { text: marker.label, color: 'white', fontWeight: 'bold', fontSize: isShuttle ? '10px' : (isYou ? '13px' : '14px') } : undefined}
               icon={{
                 url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svgIcon),
                 scaledSize: size,
