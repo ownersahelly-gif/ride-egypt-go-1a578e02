@@ -114,6 +114,19 @@ const AdminPanel = () => {
     }
 
     setRoutes(routesRes.data || []);
+
+    // Fetch all stops grouped by route for stop counts
+    const allRouteIds = (routesRes.data || []).map((r: any) => r.id);
+    if (allRouteIds.length > 0) {
+      const { data: allStops } = await supabase.from('stops').select('*').in('route_id', allRouteIds).order('stop_order');
+      const stopsMap: Record<string, any[]> = {};
+      (allStops || []).forEach((s: any) => {
+        if (!stopsMap[s.route_id]) stopsMap[s.route_id] = [];
+        stopsMap[s.route_id].push(s);
+      });
+      setRouteStopsMap(stopsMap);
+    }
+
     setApplications(appsRes.data || []);
     setShuttles(shuttlesRes.data || []);
     const bks = bookingsRes.data || [];
