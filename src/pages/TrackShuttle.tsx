@@ -144,67 +144,65 @@ const TrackShuttle = () => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Build ordered passenger stops along the route
+  // Fetch route stops and build passenger stops from predefined stops
+  const [routeStops, setRouteStops] = useState<any[]>([]);
+  
   useEffect(() => {
-    if (!route || !rideBookings.length || !user) return;
-
-    const routeOrigin = { lat: route.origin_lat, lng: route.origin_lng };
-    const routeDest = { lat: route.destination_lat, lng: route.destination_lng };
-
-    // Calculate distance along route direction (projection onto route line)
-    const calcRouteProgress = (point: { lat: number; lng: number }) => {
-      const dx = point.lat - routeOrigin.lat;
-      const dy = point.lng - routeOrigin.lng;
-      const rx = routeDest.lat - routeOrigin.lat;
-      const ry = routeDest.lng - routeOrigin.lng;
-      const len = Math.sqrt(rx * rx + ry * ry);
-      if (len === 0) return 0;
-      return (dx * rx + dy * ry) / (len * len);
+    if (!route?.id) return;
+    const fetchStops = async () => {
+      const { data } = await supabase
+        .from('stops')
+        .select('*')
+        .eq('route_id', route.id)
+        .order('stop_order');
+      setRouteStops(data || []);
     };
+    fetchStops();
+  }, [route?.id]);
+
+  useEffect(() => {
+    if (!route || !routeStops.length || !rideBookings.length || !user) return;
 
     const stops: PassengerStop[] = [];
 
-    rideBookings.forEach((b) => {
-      const pickupLat = b.custom_pickup_lat ?? route.origin_lat;
-      const pickupLng = b.custom_pickup_lng ?? route.origin_lng;
-      const dropoffLat = b.custom_dropoff_lat ?? route.destination_lat;
-      const dropoffLng = b.custom_dropoff_lng ?? route.destination_lng;
-      const isMe = b.user_id === user.id;
-      const name = isMe
-        ? (lang === 'ar' ? 'أنت' : 'You')
-        : (lang === 'ar' ? 'راكب' : 'Passenger');
+    // Use predefined route stops, map bookings by pickup_stop_id / dropoff_stop_id
+    routeStops.forEach((rs, idx) => {
+      rideBookings.forEach((b) => {
+        const isMe = b.user_id === user.id;
+        const name = isMe ? (lang === 'ar' ? 'أنت' : 'You') : (lang === 'ar' ? 'راكب' : 'Passenger');
 
-      stops.push({
-        userId: b.user_id,
-        name,
-        lat: pickupLat,
-        lng: pickupLng,
-        type: 'pickup',
-        isCurrentUser: isMe,
-        boardingCode: isMe ? b.boarding_code : undefined,
-        status: b.status,
-        orderIndex: calcRouteProgress({ lat: pickupLat, lng: pickupLng }),
+        if (b.pickup_stop_id === rs.id) {
+          stops.push({
+            userId: b.user_id,
+            name,
+            lat: rs.lat,
+            lng: rs.lng,
+            type: 'pickup',
+            isCurrentUser: isMe,
+            boardingCode: isMe ? b.boarding_code : undefined,
+            status: b.status,
+            orderIndex: idx,
+          });
+        }
+
+        if (b.dropoff_stop_id === rs.id && b.status === 'boarded') {
+          stops.push({
+            userId: b.user_id,
+            name,
+            lat: rs.lat,
+            lng: rs.lng,
+            type: 'dropoff',
+            isCurrentUser: isMe,
+            status: b.status,
+            orderIndex: idx + 0.5, // dropoffs after pickups at same stop
+          });
+        }
       });
-
-      // Only show dropoffs if boarded
-      if (b.status === 'boarded') {
-        stops.push({
-          userId: b.user_id,
-          name,
-          lat: dropoffLat,
-          lng: dropoffLng,
-          type: 'dropoff',
-          isCurrentUser: isMe,
-          status: b.status,
-          orderIndex: calcRouteProgress({ lat: dropoffLat, lng: dropoffLng }),
-        });
-      }
     });
 
-    // Sort by route progress
     stops.sort((a, b) => a.orderIndex - b.orderIndex);
     setPassengerStops(stops);
-  }, [route, rideBookings, user, lang]);
+  }, [route, routeStops, rideBookings, user, lang]);
 
   // Calculate ETA — consider whether the trip has started or not
   useEffect(() => {
@@ -468,8 +466,8 @@ const TrackShuttle = () => {
       {booking && !loading && (
         <div className="flex-1 overflow-y-auto">
           <div className="bg-card border-t border-border w-full">
-            {/* ETA Banner */}
-            {etaMinutes !== null && !isBoarded && (
+            {/* ETA Banner — only show after ride has started */}
+            {etaMinutes !== null && !isBoarded && hasLiveGps && (
               <div className="bg-primary px-5 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Navigation className="w-5 h-5 text-primary-foreground" />

@@ -11,23 +11,37 @@ import { useToast } from '@/hooks/use-toast';
 import {
   ChevronLeft, ChevronRight, Users, MapPin, MessageCircle,
   CheckCircle2, Navigation, Loader2, UserCheck, LogOut as DropOff,
-  Phone, Clock, AlertCircle, Flag, SkipForward, ArrowRight, Undo2
+  Phone, Clock, AlertCircle, Flag, SkipForward, ArrowRight, Undo2,
+  ExternalLink, DollarSign
 } from 'lucide-react';
 
-interface OrderedStop {
+interface RouteStop {
+  id: string;
+  name_en: string;
+  name_ar: string;
+  lat: number;
+  lng: number;
+  stop_order: number;
+  stop_type: string;
+}
+
+interface StopPassenger {
   bookingId: string;
   userId: string;
   name: string;
   phone?: string;
-  lat: number;
-  lng: number;
-  type: 'pickup' | 'dropoff';
-  locationName: string;
   boardingCode?: string;
   status: string;
-  routeProgress: number;
-  isCustom: boolean;
-  reached: boolean;
+  type: 'pickup' | 'dropoff';
+  totalPrice: number;
+  paymentProofUrl: string | null;
+  seats: number;
+}
+
+interface ActiveStop {
+  stop: RouteStop;
+  pickupPassengers: StopPassenger[];
+  dropoffPassengers: StopPassenger[];
 }
 
 const REACH_THRESHOLD_M = 200;
@@ -52,22 +66,33 @@ const ActiveRide = () => {
   const [route, setRoute] = useState<any>(null);
   const [bookings, setBookings] = useState<any[]>([]);
   const [profiles, setProfiles] = useState<Record<string, any>>({});
+  const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
+  const [activeStops, setActiveStops] = useState<ActiveStop[]>([]);
   const [loading, setLoading] = useState(true);
   const [boardingInput, setBoardingInput] = useState('');
   const [verifyingBooking, setVerifyingBooking] = useState<string | null>(null);
   const [chatBookingId, setChatBookingId] = useState<string | null>(null);
-  const [orderedStops, setOrderedStops] = useState<OrderedStop[]>([]);
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const reachedStopsRef = useRef<Set<number>>(new Set());
-  const [arrivedAt, setArrivedAt] = useState<number | null>(null); // timestamp when driver arrived at current pickup
+  const [arrivedAt, setArrivedAt] = useState<number | null>(null);
   const [waitSeconds, setWaitSeconds] = useState(0);
+  const [waitTimeMinutes, setWaitTimeMinutes] = useState(1); // default 1 min, fetched from app_settings
+  const reachedStopsRef = useRef<Set<number>>(new Set());
 
   const fetchData = useCallback(async () => {
     if (!user) return;
     const today = new Date().toISOString().split('T')[0];
 
-    // Find the shuttle that has today's bookings (not just any shuttle)
+    // Fetch wait time setting
+    const { data: settingsData } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'stop_waiting_time_minutes')
+      .maybeSingle();
+    if (settingsData?.value) {
+      setWaitTimeMinutes(parseInt(settingsData.value) || 1);
+    }
+
     const { data: allShuttles } = await supabase
       .from('shuttles')
       .select('*, routes(*)')
@@ -91,14 +116,12 @@ const ActiveRide = () => {
     }
 
     if (!chosenShuttle) {
-      // Fallback to first shuttle
       chosenShuttle = allShuttles?.[0] || null;
     }
 
     if (!chosenShuttle) { setLoading(false); return; }
     setShuttle(chosenShuttle);
 
-    // Get route: from shuttle relation, or fallback to booking's route
     let routeData = chosenShuttle.routes;
     if (!routeData && bks.length > 0 && bks[0].route_id) {
       const { data: fallbackRoute } = await supabase
@@ -110,6 +133,16 @@ const ActiveRide = () => {
     }
     setRoute(routeData);
     setBookings(bks);
+
+    // Fetch route stops
+    if (routeData?.id) {
+      const { data: stopsData } = await supabase
+        .from('stops')
+        .select('*')
+        .eq('route_id', routeData.id)
+        .order('stop_order');
+      setRouteStops(stopsData || []);
+    }
 
     const userIds = [...new Set(bks.map(b => b.user_id))];
     if (userIds.length > 0) {
@@ -126,80 +159,58 @@ const ActiveRide = () => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Build ordered stops
+  // Build active stops from route stops + bookings
   useEffect(() => {
-    if (!route || !bookings.length) { setOrderedStops([]); return; }
+    if (!route || !routeStops.length) { setActiveStops([]); return; }
 
-    const routeOrigin = { lat: route.origin_lat, lng: route.origin_lng };
-    const routeDest = { lat: route.destination_lat, lng: route.destination_lng };
+    const stops: ActiveStop[] = [];
 
-    const calcProgress = (lat: number, lng: number) => {
-      const dx = lat - routeOrigin.lat;
-      const dy = lng - routeOrigin.lng;
-      const rx = routeDest.lat - routeOrigin.lat;
-      const ry = routeDest.lng - routeOrigin.lng;
-      const len2 = rx * rx + ry * ry;
-      if (len2 === 0) return 0;
-      return Math.max(0, Math.min(1, (dx * rx + dy * ry) / len2));
-    };
+    for (const stop of routeStops) {
+      const pickupPassengers: StopPassenger[] = [];
+      const dropoffPassengers: StopPassenger[] = [];
 
-    const stops: OrderedStop[] = [];
+      bookings.forEach(b => {
+        const profile = profiles[b.user_id];
+        const name = profile?.full_name || (lang === 'ar' ? 'راكب' : 'Passenger');
 
-    bookings.forEach((b) => {
-      const profile = profiles[b.user_id];
-      const name = profile?.full_name || (lang === 'ar' ? 'راكب' : 'Passenger');
+        if (b.pickup_stop_id === stop.id && b.status === 'confirmed') {
+          pickupPassengers.push({
+            bookingId: b.id,
+            userId: b.user_id,
+            name,
+            phone: profile?.phone,
+            boardingCode: b.boarding_code,
+            status: b.status,
+            type: 'pickup',
+            totalPrice: parseFloat(b.total_price || 0),
+            paymentProofUrl: b.payment_proof_url,
+            seats: b.seats || 1,
+          });
+        }
 
-      const pickupLat = b.custom_pickup_lat ?? route.origin_lat;
-      const pickupLng = b.custom_pickup_lng ?? route.origin_lng;
-      const isCustomPickup = !!(b.custom_pickup_lat && b.custom_pickup_lng);
+        if (b.dropoff_stop_id === stop.id && b.status === 'boarded') {
+          dropoffPassengers.push({
+            bookingId: b.id,
+            userId: b.user_id,
+            name,
+            phone: profile?.phone,
+            status: b.status,
+            type: 'dropoff',
+            totalPrice: parseFloat(b.total_price || 0),
+            paymentProofUrl: b.payment_proof_url,
+            seats: b.seats || 1,
+          });
+        }
+      });
 
-      const dropoffLat = b.custom_dropoff_lat ?? route.destination_lat;
-      const dropoffLng = b.custom_dropoff_lng ?? route.destination_lng;
-      const isCustomDropoff = !!(b.custom_dropoff_lat && b.custom_dropoff_lng);
-
-      // Always add pickup (for confirmed passengers)
-      if (b.status === 'confirmed') {
-        stops.push({
-          bookingId: b.id,
-          userId: b.user_id,
-          name,
-          phone: profile?.phone,
-          lat: pickupLat,
-          lng: pickupLng,
-          type: 'pickup',
-          locationName: b.custom_pickup_name || (lang === 'ar' ? route.origin_name_ar : route.origin_name_en),
-          boardingCode: b.boarding_code,
-          status: b.status,
-          routeProgress: calcProgress(pickupLat, pickupLng),
-          isCustom: isCustomPickup,
-          reached: false,
-        });
+      // Only include stops that have bookings
+      if (pickupPassengers.length > 0 || dropoffPassengers.length > 0) {
+        stops.push({ stop, pickupPassengers, dropoffPassengers });
       }
+    }
 
-      // Only add dropoff for passengers who actually boarded (verified boarding code)
-      if (b.status === 'boarded') {
-        stops.push({
-          bookingId: b.id,
-          userId: b.user_id,
-          name,
-          phone: profile?.phone,
-          lat: dropoffLat,
-          lng: dropoffLng,
-          type: 'dropoff',
-          locationName: b.custom_dropoff_name || (lang === 'ar' ? route.destination_name_ar : route.destination_name_en),
-          status: b.status,
-          routeProgress: calcProgress(dropoffLat, dropoffLng),
-          isCustom: isCustomDropoff,
-          reached: false,
-        });
-      }
-    });
-
-    // Sort: all pickups first (by route progress), then all dropoffs (by route progress)
-    const pickups = stops.filter(s => s.type === 'pickup').sort((a, b) => a.routeProgress - b.routeProgress);
-    const dropoffs = stops.filter(s => s.type === 'dropoff').sort((a, b) => a.routeProgress - b.routeProgress);
-    setOrderedStops([...pickups, ...dropoffs]);
-  }, [route, bookings, profiles, lang]);
+    setActiveStops(stops);
+  }, [route, routeStops, bookings, profiles, lang]);
 
   // Update driver location & push to DB
   useEffect(() => {
@@ -219,28 +230,27 @@ const ActiveRide = () => {
     return () => navigator.geolocation.clearWatch(watchId);
   }, [shuttle?.id]);
 
-  // Auto-advance when driver reaches current stop & start wait timer for pickups
+  // Auto-detect arrival at current stop
   useEffect(() => {
-    if (!driverLocation || orderedStops.length === 0) return;
-    if (currentStopIndex >= orderedStops.length) return;
+    if (!driverLocation || activeStops.length === 0) return;
+    if (currentStopIndex >= activeStops.length) return;
 
-    const currentStop = orderedStops[currentStopIndex];
-    const dist = haversineDistance(driverLocation, { lat: currentStop.lat, lng: currentStop.lng });
+    const currentActive = activeStops[currentStopIndex];
+    const dist = haversineDistance(driverLocation, { lat: currentActive.stop.lat, lng: currentActive.stop.lng });
 
     if (dist <= REACH_THRESHOLD_M && !reachedStopsRef.current.has(currentStopIndex)) {
       reachedStopsRef.current.add(currentStopIndex);
-      // Start wait timer for pickups
-      if (currentStop.type === 'pickup') {
+      if (currentActive.pickupPassengers.length > 0) {
         setArrivedAt(Date.now());
         setWaitSeconds(0);
       }
       toast({
-        title: currentStop.type === 'pickup'
-          ? (lang === 'ar' ? `📍 وصلت لنقطة صعود ${currentStop.name}` : `📍 Reached ${currentStop.name}'s pickup`)
-          : (lang === 'ar' ? `📍 وصلت لنقطة نزول ${currentStop.name}` : `📍 Reached ${currentStop.name}'s dropoff`),
+        title: lang === 'ar'
+          ? `📍 وصلت إلى ${currentActive.stop.name_ar}`
+          : `📍 Reached ${currentActive.stop.name_en}`,
       });
     }
-  }, [driverLocation, orderedStops, currentStopIndex, lang, toast]);
+  }, [driverLocation, activeStops, currentStopIndex, lang, toast]);
 
   // Reset arrivedAt when stop changes
   useEffect(() => {
@@ -248,7 +258,7 @@ const ActiveRide = () => {
     setWaitSeconds(0);
   }, [currentStopIndex]);
 
-  // Tick the wait timer every second
+  // Tick the wait timer
   useEffect(() => {
     if (arrivedAt === null) return;
     const interval = setInterval(() => {
@@ -257,15 +267,23 @@ const ActiveRide = () => {
     return () => clearInterval(interval);
   }, [arrivedAt]);
 
+  const waitTimeSec = waitTimeMinutes * 60;
+
   const advanceToNextStop = () => {
-    if (currentStopIndex < orderedStops.length - 1) {
+    if (currentStopIndex < activeStops.length - 1) {
       setCurrentStopIndex(prev => prev + 1);
+    }
+  };
+
+  const goToPreviousStop = () => {
+    if (currentStopIndex > 0) {
+      setCurrentStopIndex(prev => prev - 1);
     }
   };
 
   const skipPassenger = async (bookingId: string) => {
     const booking = bookings.find(b => b.id === bookingId);
-    if (!booking) { advanceToNextStop(); return; }
+    if (!booking) return;
 
     const refundAmount = Math.round(parseFloat(booking.total_price || 0) * 0.5 * 100) / 100;
 
@@ -292,36 +310,11 @@ const ActiveRide = () => {
         ? `سيتم استرداد ${refundAmount} جنيه (50%) للراكب`
         : `${refundAmount} EGP (50%) will be refunded to the passenger`,
     });
-
-    advanceToNextStop();
-  };
-
-  const goToPreviousStop = () => {
-    if (currentStopIndex > 0) {
-      setCurrentStopIndex(prev => prev - 1);
-    }
   };
 
   const verifyBoarding = async (bookingId: string) => {
     const booking = bookings.find(b => b.id === bookingId);
     if (!booking) return;
-
-    // Check driver is near the passenger's pickup location
-    if (driverLocation) {
-      const pickupLat = booking.custom_pickup_lat ?? route?.origin_lat ?? 0;
-      const pickupLng = booking.custom_pickup_lng ?? route?.origin_lng ?? 0;
-      const dist = haversineDistance(driverLocation, { lat: pickupLat, lng: pickupLng });
-      if (dist > REACH_THRESHOLD_M) {
-        toast({
-          title: lang === 'ar' ? 'بعيد عن نقطة الصعود' : 'Too far from pickup',
-          description: lang === 'ar'
-            ? `يجب أن تكون على بعد ${REACH_THRESHOLD_M} متر من نقطة صعود الراكب`
-            : `You must be within ${REACH_THRESHOLD_M}m of the passenger's pickup point`,
-          variant: 'destructive',
-        });
-        return;
-      }
-    }
 
     if (booking.boarding_code !== boardingInput) {
       toast({
@@ -331,19 +324,29 @@ const ActiveRide = () => {
       });
       return;
     }
+
     const { error } = await supabase.from('bookings').update({
       status: 'boarded',
       boarded_at: new Date().toISOString(),
     }).eq('id', bookingId);
+
     if (error) {
       toast({ title: t('auth.error'), description: error.message, variant: 'destructive' });
       return;
     }
+
     setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: 'boarded', boarded_at: new Date().toISOString() } : b));
     setBoardingInput('');
     setVerifyingBooking(null);
-    toast({ title: lang === 'ar' ? 'تم التأكيد ✓' : 'Boarded! ✓' });
-    advanceToNextStop();
+
+    // Show payment info
+    const amountDue = booking.payment_proof_url ? 0 : parseFloat(booking.total_price || 0);
+    toast({
+      title: lang === 'ar' ? 'تم التأكيد ✓' : 'Boarded! ✓',
+      description: amountDue > 0
+        ? (lang === 'ar' ? `💵 مطلوب كاش: ${amountDue} جنيه` : `💵 Cash needed: ${amountDue} EGP`)
+        : (lang === 'ar' ? '✅ مدفوع عبر InstaPay — 0 جنيه' : '✅ Paid via InstaPay — 0 EGP'),
+    });
   };
 
   const markDroppedOff = async (bookingId: string) => {
@@ -357,17 +360,15 @@ const ActiveRide = () => {
     }
     setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: 'completed' } : b));
     toast({ title: lang === 'ar' ? 'تم الإنزال ✓' : 'Dropped Off ✓' });
-    advanceToNextStop();
   };
 
   const completeRide = async () => {
     const boardedBookings = bookings.filter(b => b.status === 'boarded');
     if (boardedBookings.length === 0) return;
     const now = new Date().toISOString();
-    const promises = boardedBookings.map(b =>
+    await Promise.all(boardedBookings.map(b =>
       supabase.from('bookings').update({ status: 'completed', dropped_off_at: now }).eq('id', b.id)
-    );
-    await Promise.all(promises);
+    ));
     if (shuttle?.id) {
       await supabase.from('shuttles').update({ status: 'inactive' }).eq('id', shuttle.id);
     }
@@ -375,37 +376,36 @@ const ActiveRide = () => {
     toast({ title: lang === 'ar' ? 'تم إنهاء الرحلة ✓' : 'Ride completed! ✓' });
   };
 
-  // Current stop and next stop
-  const currentStop = orderedStops[currentStopIndex] || null;
-  const nextStop = orderedStops[currentStopIndex + 1] || null;
-  const completedStops = currentStopIndex;
-  const totalStops = orderedStops.length;
+  // Build Google Maps navigation URL with only booked stops
+  const buildGoogleMapsUrl = () => {
+    if (!route || activeStops.length === 0) return null;
+    const origin = `${route.origin_lat},${route.origin_lng}`;
+    const destination = `${route.destination_lat},${route.destination_lng}`;
+    const waypoints = activeStops.map(as => `${as.stop.lat},${as.stop.lng}`).join('|');
+    return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&waypoints=${waypoints}&travelmode=driving`;
+  };
 
-  // Build markers — only show: route start, route end, current stop, driver location
+  const currentActive = activeStops[currentStopIndex] || null;
+  const boardedCount = bookings.filter(b => b.status === 'boarded').length;
+  const totalCount = bookings.length;
+  const allCompleted = totalCount > 0 && bookings.every(b => b.status === 'completed' || b.status === 'cancelled');
+  const googleMapsUrl = buildGoogleMapsUrl();
+
+  // Build markers
   const markers: { lat: number; lng: number; label?: string; color?: 'red' | 'green' | 'blue' | 'orange' | 'purple' }[] = [];
   if (route) {
     markers.push({ lat: route.origin_lat, lng: route.origin_lng, label: 'A', color: 'green' });
     markers.push({ lat: route.destination_lat, lng: route.destination_lng, label: 'B', color: 'red' });
   }
+  activeStops.forEach((as, i) => {
+    markers.push({ lat: as.stop.lat, lng: as.stop.lng, label: `${i + 1}`, color: i === currentStopIndex ? 'orange' : 'blue' });
+  });
   if (driverLocation) {
-    markers.push({ lat: driverLocation.lat, lng: driverLocation.lng, label: '🚐', color: 'blue' });
-  }
-  if (currentStop) {
-    markers.push({
-      lat: currentStop.lat,
-      lng: currentStop.lng,
-      label: currentStop.type === 'pickup' ? '📍' : '🏁',
-      color: currentStop.type === 'pickup' ? 'orange' : 'purple',
-    });
+    markers.push({ lat: driverLocation.lat, lng: driverLocation.lng, label: '🚐', color: 'purple' });
   }
 
-  // Directions: driver location → current stop only (1 waypoint, never exceeds limit)
   const dirOrigin = driverLocation || (route ? { lat: route.origin_lat, lng: route.origin_lng } : undefined);
-  const dirDest = currentStop ? { lat: currentStop.lat, lng: currentStop.lng } : (route ? { lat: route.destination_lat, lng: route.destination_lng } : undefined);
-
-  const boardedCount = bookings.filter(b => b.status === 'boarded').length;
-  const totalCount = bookings.length;
-  const allCompleted = totalCount > 0 && bookings.every(b => b.status === 'completed');
+  const dirDest = currentActive ? { lat: currentActive.stop.lat, lng: currentActive.stop.lng } : (route ? { lat: route.destination_lat, lng: route.destination_lng } : undefined);
 
   if (loading) {
     return (
@@ -414,6 +414,21 @@ const ActiveRide = () => {
       </div>
     );
   }
+
+  // Check if all passengers at current stop are handled
+  const allPickupsHandledAtStop = currentActive
+    ? currentActive.pickupPassengers.every(p => {
+        const b = bookings.find(bk => bk.id === p.bookingId);
+        return b?.status === 'boarded' || b?.status === 'cancelled';
+      })
+    : true;
+  const allDropoffsHandledAtStop = currentActive
+    ? currentActive.dropoffPassengers.every(p => {
+        const b = bookings.find(bk => bk.id === p.bookingId);
+        return b?.status === 'completed' || b?.status === 'cancelled';
+      })
+    : true;
+  const canAdvance = allPickupsHandledAtStop && allDropoffsHandledAtStop;
 
   return (
     <div className="min-h-screen bg-surface flex flex-col">
@@ -426,13 +441,28 @@ const ActiveRide = () => {
             {lang === 'ar' ? 'الرحلة النشطة' : 'Active Ride'}
           </h1>
           <span className="ms-auto text-xs px-2.5 py-1 rounded-full font-medium bg-primary/10 text-primary">
-            {completedStops}/{totalStops} {lang === 'ar' ? 'توقفات' : 'stops'}
+            {currentStopIndex}/{activeStops.length} {lang === 'ar' ? 'توقفات' : 'stops'}
           </span>
         </div>
       </header>
 
-      {/* Map — shows only route to NEXT stop */}
-      <div className="h-[300px] relative">
+      {/* Navigate Full Trip button */}
+      {googleMapsUrl && (
+        <a href={googleMapsUrl} target="_blank" rel="noopener noreferrer" className="block">
+          <div className="bg-primary px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Navigation className="w-5 h-5 text-primary-foreground" />
+              <span className="text-primary-foreground font-semibold text-sm">
+                {lang === 'ar' ? 'افتح الرحلة كاملة في خرائط جوجل' : 'Navigate Full Trip in Google Maps'}
+              </span>
+            </div>
+            <ExternalLink className="w-4 h-4 text-primary-foreground" />
+          </div>
+        </a>
+      )}
+
+      {/* Map */}
+      <div className="h-[280px] relative">
         <MapView
           className="h-full"
           markers={markers}
@@ -440,10 +470,9 @@ const ActiveRide = () => {
           destination={dirDest}
           showDirections={!!(dirOrigin && dirDest)}
           center={driverLocation || undefined}
-          zoom={14}
+          zoom={13}
           showUserLocation={false}
         />
-        {/* Floating stats */}
         <div className="absolute top-3 start-3 z-[5] bg-card border border-border rounded-xl shadow-lg px-4 py-2.5 flex items-center gap-3">
           <div className="flex items-center gap-1.5">
             <UserCheck className="w-4 h-4 text-primary" />
@@ -459,154 +488,209 @@ const ActiveRide = () => {
 
       {/* Current stop card */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {currentStop ? (
-          <div className={`rounded-2xl border-2 p-5 ${
-            currentStop.type === 'pickup'
-              ? 'bg-orange-50 border-orange-300 dark:bg-orange-950/30 dark:border-orange-800'
-              : 'bg-purple-50 border-purple-300 dark:bg-purple-950/30 dark:border-purple-800'
-          }`}>
+        {currentActive ? (
+          <div className="rounded-2xl border-2 p-5 bg-orange-50 border-orange-300 dark:bg-orange-950/30 dark:border-orange-800">
             <div className="flex items-center gap-2 mb-3">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold ${
-                currentStop.type === 'pickup'
-                  ? 'bg-orange-200 text-orange-800 dark:bg-orange-900 dark:text-orange-200'
-                  : 'bg-purple-200 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
-              }`}>
+              <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold bg-orange-200 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
                 {currentStopIndex + 1}
               </div>
               <div className="flex-1">
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  {currentStop.type === 'pickup'
-                    ? (lang === 'ar' ? 'التوقف التالي — صعود' : 'Next Stop — Pickup')
-                    : (lang === 'ar' ? 'التوقف التالي — نزول' : 'Next Stop — Drop-off')}
+                  {lang === 'ar' ? 'التوقف التالي' : 'Next Stop'}
                 </p>
-                <p className="text-lg font-bold text-foreground">{currentStop.name}</p>
+                <p className="text-lg font-bold text-foreground">
+                  {lang === 'ar' ? currentActive.stop.name_ar : currentActive.stop.name_en}
+                </p>
               </div>
-              {currentStop.phone && (
-                <a href={`tel:${currentStop.phone}`}>
-                  <Button variant="outline" size="icon" className="rounded-full">
-                    <Phone className="w-4 h-4" />
-                  </Button>
-                </a>
-              )}
             </div>
 
             <div className="flex items-center gap-1 text-sm text-muted-foreground mb-3">
               <MapPin className="w-4 h-4 shrink-0" />
-              <span>{currentStop.locationName}</span>
-              {currentStop.isCustom && (
-                <span className="text-[10px] bg-secondary/20 text-secondary px-1.5 py-0.5 rounded-full ms-1">
-                  {lang === 'ar' ? 'مخصص' : 'Custom'}
-                </span>
-              )}
+              <span>{lang === 'ar' ? currentActive.stop.name_ar : currentActive.stop.name_en}</span>
             </div>
 
-            {/* Navigate with Google Maps — opens turn-by-turn directions */}
+            {/* Navigate to this stop */}
             <a
-              href={`https://www.google.com/maps/dir/?api=1&destination=${currentStop.lat},${currentStop.lng}&travelmode=driving`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mb-4 block"
+              href={`https://www.google.com/maps/dir/?api=1&destination=${currentActive.stop.lat},${currentActive.stop.lng}&travelmode=driving`}
+              target="_blank" rel="noopener noreferrer" className="mb-4 block"
             >
               <Button variant="secondary" className="w-full gap-2">
                 <Navigation className="w-4 h-4" />
-                {lang === 'ar' ? 'افتح الملاحة في خرائط جوجل' : 'Navigate in Google Maps'}
+                {lang === 'ar' ? 'الملاحة لهذا التوقف' : 'Navigate to this stop'}
                 <ArrowRight className="w-4 h-4 ms-auto" />
               </Button>
             </a>
 
-            {/* Action buttons */}
-            {currentStop.type === 'pickup' ? (
-              verifyingBooking === currentStop.bookingId ? (
+            {/* "I Arrived" button + timer */}
+            {!arrivedAt && (
+              <Button
+                className="w-full mb-3"
+                variant="outline"
+                disabled={driverLocation ? haversineDistance(driverLocation, { lat: currentActive.stop.lat, lng: currentActive.stop.lng }) > REACH_THRESHOLD_M : true}
+                onClick={() => {
+                  setArrivedAt(Date.now());
+                  setWaitSeconds(0);
+                  // Update driver_arrived_at for all pickups at this stop
+                  currentActive.pickupPassengers.forEach(p => {
+                    supabase.from('bookings').update({ driver_arrived_at: new Date().toISOString() }).eq('id', p.bookingId);
+                  });
+                  toast({
+                    title: lang === 'ar' ? `⏱️ بدأ العد — ${waitTimeMinutes} دقيقة` : `⏱️ Timer started — ${waitTimeMinutes} min`,
+                  });
+                }}
+              >
+                <Clock className="w-4 h-4 me-2" />
+                {driverLocation && haversineDistance(driverLocation, { lat: currentActive.stop.lat, lng: currentActive.stop.lng }) <= REACH_THRESHOLD_M
+                  ? (lang === 'ar' ? 'وصلت — ابدأ العد' : "I've Arrived — Start Timer")
+                  : (lang === 'ar' ? 'بعيد عن التوقف' : 'Too far from stop')}
+              </Button>
+            )}
+
+            {arrivedAt && (
+              <div className="bg-card border border-border rounded-xl p-3 mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Input
-                    value={boardingInput}
-                    onChange={(e) => setBoardingInput(e.target.value)}
-                    placeholder={lang === 'ar' ? 'أدخل الرمز المكون من 6 أرقام' : 'Enter 6-digit code'}
-                    className="h-10 text-sm flex-1 font-mono tracking-widest text-center"
-                    maxLength={6}
-                    autoFocus
-                  />
-                  <Button onClick={() => verifyBoarding(currentStop.bookingId)} disabled={boardingInput.length !== 6}>
-                    <CheckCircle2 className="w-4 h-4 me-1" />
-                    {lang === 'ar' ? 'تأكيد' : 'Verify'}
-                  </Button>
-                  <Button variant="ghost" onClick={() => { setVerifyingBooking(null); setBoardingInput(''); }}>✕</Button>
+                  <Clock className="w-4 h-4 text-primary" />
+                  <span className="text-sm font-medium text-foreground">
+                    {lang === 'ar' ? 'وقت الانتظار' : 'Wait Time'}
+                  </span>
                 </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  {currentStopIndex > 0 && (
-                    <Button variant="outline" onClick={goToPreviousStop} title={lang === 'ar' ? 'رجوع' : 'Previous'}>
-                      <Undo2 className="w-4 h-4" />
-                    </Button>
-                  )}
-                  <Button className="flex-1" onClick={() => { setVerifyingBooking(currentStop.bookingId); setBoardingInput(''); }}>
-                    <CheckCircle2 className="w-4 h-4 me-2" />
-                    {lang === 'ar' ? 'تأكيد صعود' : 'Verify Boarding'}
-                  </Button>
-                  <Button variant="outline" onClick={() => setChatBookingId(currentStop.bookingId)}>
-                    <MessageCircle className="w-4 h-4" />
-                  </Button>
-                  {waitSeconds >= 60 ? (
-                    <Button variant="destructive" onClick={() => skipPassenger(currentStop.bookingId)} title={lang === 'ar' ? 'تخطي - انتظرت دقيقة' : 'Skip - waited 1 min'}>
-                      <SkipForward className="w-4 h-4 me-1" />
-                      {lang === 'ar' ? 'تخطي' : 'Skip'}
-                    </Button>
-                  ) : arrivedAt ? (
-                    <Button variant="outline" disabled title={lang === 'ar' ? `انتظر ${60 - waitSeconds} ثانية` : `Wait ${60 - waitSeconds}s`}>
-                      <Clock className="w-4 h-4 me-1" />
-                      {60 - waitSeconds}s
-                    </Button>
-                  ) : (() => {
-                    const isNearPickup = driverLocation
-                      ? haversineDistance(driverLocation, { lat: currentStop.lat, lng: currentStop.lng }) <= REACH_THRESHOLD_M
-                      : false;
-                    return (
-                      <Button
-                        variant="outline"
-                        disabled={!isNearPickup}
-                        onClick={() => {
-                          setArrivedAt(Date.now());
-                          setWaitSeconds(0);
-                          supabase.from('bookings').update({
-                            driver_arrived_at: new Date().toISOString(),
-                          }).eq('id', currentStop.bookingId);
-                          toast({ title: lang === 'ar' ? '⏱️ بدأ العد التنازلي — 60 ثانية' : '⏱️ Timer started — 60 seconds' });
-                        }}
-                        title={isNearPickup
-                          ? (lang === 'ar' ? 'وصلت — ابدأ العد' : "I've arrived — start timer")
-                          : (lang === 'ar' ? `يجب أن تكون على بعد ${REACH_THRESHOLD_M}م` : `Must be within ${REACH_THRESHOLD_M}m`)}
-                      >
-                        <Clock className="w-4 h-4 me-1" />
-                        {isNearPickup
-                          ? (lang === 'ar' ? 'وصلت' : 'Arrived')
-                          : (lang === 'ar' ? 'بعيد' : 'Too far')}
-                      </Button>
-                    );
-                  })()
-                  }
-                </div>
-              )
-            ) : (
-              <div className="flex items-center gap-2">
-                {currentStopIndex > 0 && (
-                  <Button variant="outline" onClick={goToPreviousStop} title={lang === 'ar' ? 'رجوع' : 'Previous'}>
-                    <Undo2 className="w-4 h-4" />
-                  </Button>
-                )}
-                <Button className="flex-1" variant="outline" onClick={() => markDroppedOff(currentStop.bookingId)}>
-                  <DropOff className="w-4 h-4 me-2" />
-                  {lang === 'ar' ? 'تأكيد الإنزال' : 'Confirm Drop-off'}
-                </Button>
-                <Button variant="outline" onClick={() => setChatBookingId(currentStop.bookingId)}>
-                  <MessageCircle className="w-4 h-4" />
-                </Button>
-                <Button variant="outline" onClick={advanceToNextStop} title={lang === 'ar' ? 'تخطي' : 'Skip'}>
-                  <SkipForward className="w-4 h-4" />
-                </Button>
+                <span className={`text-sm font-bold ${waitSeconds >= waitTimeSec ? 'text-destructive' : 'text-foreground'}`}>
+                  {Math.floor(waitSeconds / 60)}:{String(waitSeconds % 60).padStart(2, '0')} / {waitTimeMinutes}:00
+                </span>
               </div>
             )}
+
+            {/* Pickup passengers at this stop */}
+            {currentActive.pickupPassengers.length > 0 && (
+              <div className="space-y-2 mb-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase">
+                  {lang === 'ar' ? `صعود (${currentActive.pickupPassengers.length})` : `Pickups (${currentActive.pickupPassengers.length})`}
+                </p>
+                {currentActive.pickupPassengers.map(p => {
+                  const b = bookings.find(bk => bk.id === p.bookingId);
+                  const isBoarded = b?.status === 'boarded';
+                  const isCancelled = b?.status === 'cancelled';
+                  const amountDue = p.paymentProofUrl ? 0 : p.totalPrice;
+
+                  return (
+                    <div key={p.bookingId} className={`bg-card border rounded-xl p-3 ${isBoarded ? 'border-green-300 bg-green-50 dark:bg-green-950/20' : isCancelled ? 'opacity-50' : 'border-border'}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-foreground">{p.name}</span>
+                          <span className="text-[10px] text-muted-foreground">({p.seats} {lang === 'ar' ? 'مقعد' : 'seat'})</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {p.phone && (
+                            <a href={`tel:${p.phone}`}>
+                              <Button variant="ghost" size="icon" className="h-7 w-7"><Phone className="w-3.5 h-3.5" /></Button>
+                            </a>
+                          )}
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setChatBookingId(p.bookingId)}>
+                            <MessageCircle className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Payment info */}
+                      <div className="flex items-center gap-1.5 text-xs mb-2">
+                        <DollarSign className="w-3 h-3" />
+                        {amountDue > 0 ? (
+                          <span className="text-amber-600 font-medium">
+                            {lang === 'ar' ? `💵 كاش: ${amountDue} جنيه` : `💵 Cash: ${amountDue} EGP`}
+                          </span>
+                        ) : (
+                          <span className="text-green-600 font-medium">
+                            {lang === 'ar' ? '✅ مدفوع — 0 جنيه' : '✅ Paid — 0 EGP'}
+                          </span>
+                        )}
+                      </div>
+
+                      {isBoarded ? (
+                        <span className="text-xs text-green-600 font-medium">✓ {lang === 'ar' ? 'صعد' : 'Boarded'}</span>
+                      ) : isCancelled ? (
+                        <span className="text-xs text-destructive font-medium">{lang === 'ar' ? 'تم التخطي' : 'Skipped'}</span>
+                      ) : verifyingBooking === p.bookingId ? (
+                        <div className="flex items-center gap-2">
+                          <Input
+                            value={boardingInput}
+                            onChange={(e) => setBoardingInput(e.target.value)}
+                            placeholder={lang === 'ar' ? 'الرمز المكون من 6 أرقام' : '6-digit code'}
+                            className="h-9 text-sm flex-1 font-mono tracking-widest text-center"
+                            maxLength={6}
+                            autoFocus
+                          />
+                          <Button size="sm" onClick={() => verifyBoarding(p.bookingId)} disabled={boardingInput.length !== 6}>
+                            <CheckCircle2 className="w-3.5 h-3.5 me-1" />
+                            {lang === 'ar' ? 'تأكيد' : 'Verify'}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => { setVerifyingBooking(null); setBoardingInput(''); }}>✕</Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <Button size="sm" className="flex-1" onClick={() => { setVerifyingBooking(p.bookingId); setBoardingInput(''); }}>
+                            <CheckCircle2 className="w-3.5 h-3.5 me-1" />
+                            {lang === 'ar' ? 'تأكيد صعود' : 'Verify'}
+                          </Button>
+                          {arrivedAt && waitSeconds >= waitTimeSec && (
+                            <Button size="sm" variant="destructive" onClick={() => skipPassenger(p.bookingId)}>
+                              <SkipForward className="w-3.5 h-3.5 me-1" />
+                              {lang === 'ar' ? 'تخطي' : 'Skip'}
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Dropoff passengers at this stop */}
+            {currentActive.dropoffPassengers.length > 0 && (
+              <div className="space-y-2 mb-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase">
+                  {lang === 'ar' ? `نزول (${currentActive.dropoffPassengers.length})` : `Drop-offs (${currentActive.dropoffPassengers.length})`}
+                </p>
+                {currentActive.dropoffPassengers.map(p => {
+                  const b = bookings.find(bk => bk.id === p.bookingId);
+                  const isCompleted = b?.status === 'completed';
+
+                  return (
+                    <div key={`drop-${p.bookingId}`} className={`bg-card border rounded-xl p-3 ${isCompleted ? 'border-green-300 bg-green-50 dark:bg-green-950/20' : 'border-border'}`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-foreground">{p.name}</span>
+                        {isCompleted ? (
+                          <span className="text-xs text-green-600 font-medium">✓ {lang === 'ar' ? 'نزل' : 'Dropped off'}</span>
+                        ) : (
+                          <Button size="sm" variant="outline" onClick={() => markDroppedOff(p.bookingId)}>
+                            <DropOff className="w-3.5 h-3.5 me-1" />
+                            {lang === 'ar' ? 'تأكيد نزول' : 'Drop off'}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Navigation buttons */}
+            <div className="flex items-center gap-2 mt-3">
+              {currentStopIndex > 0 && (
+                <Button variant="outline" onClick={goToPreviousStop}>
+                  <Undo2 className="w-4 h-4 me-1" />
+                  {lang === 'ar' ? 'السابق' : 'Previous'}
+                </Button>
+              )}
+              {currentStopIndex < activeStops.length - 1 && (
+                <Button className="flex-1" onClick={advanceToNextStop} disabled={!canAdvance}>
+                  <ArrowRight className="w-4 h-4 me-1" />
+                  {lang === 'ar' ? 'التوقف التالي' : 'Next Stop'}
+                </Button>
+              )}
+            </div>
           </div>
-        ) : orderedStops.length === 0 ? (
+        ) : activeStops.length === 0 ? (
           <div className="bg-card border border-border rounded-xl p-8 text-center text-muted-foreground">
             {lang === 'ar' ? 'لا يوجد ركاب اليوم' : 'No passengers today'}
           </div>
@@ -620,30 +704,27 @@ const ActiveRide = () => {
         )}
 
         {/* Upcoming stops preview */}
-        {nextStop && (
+        {activeStops.length > currentStopIndex + 1 && (
           <div className="bg-card border border-border rounded-xl p-4">
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
               {lang === 'ar' ? 'التوقفات القادمة' : 'Upcoming Stops'}
             </h4>
             <div className="space-y-2">
-              {orderedStops.slice(currentStopIndex + 1, currentStopIndex + 4).map((stop, i) => (
-                <div key={`upcoming-${stop.bookingId}-${stop.type}`} className="flex items-center gap-3 text-sm">
-                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                    stop.type === 'pickup' ? 'bg-orange-100 text-orange-700' : 'bg-purple-100 text-purple-700'
-                  }`}>{currentStopIndex + 2 + i}</span>
-                  <span className="text-foreground flex-1 truncate">{stop.name}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                    stop.type === 'pickup' ? 'bg-orange-50 text-orange-600' : 'bg-purple-50 text-purple-600'
-                  }`}>
-                    {stop.type === 'pickup' ? (lang === 'ar' ? 'صعود' : 'Pickup') : (lang === 'ar' ? 'نزول' : 'Dropoff')}
+              {activeStops.slice(currentStopIndex + 1, currentStopIndex + 4).map((as, i) => (
+                <div key={as.stop.id} className="flex items-center gap-3 text-sm">
+                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-blue-100 text-blue-700">
+                    {currentStopIndex + 2 + i}
+                  </span>
+                  <span className="text-foreground flex-1 truncate">
+                    {lang === 'ar' ? as.stop.name_ar : as.stop.name_en}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {as.pickupPassengers.length > 0 && `${as.pickupPassengers.length}↑`}
+                    {as.pickupPassengers.length > 0 && as.dropoffPassengers.length > 0 && ' '}
+                    {as.dropoffPassengers.length > 0 && `${as.dropoffPassengers.length}↓`}
                   </span>
                 </div>
               ))}
-              {orderedStops.length - currentStopIndex - 1 > 3 && (
-                <p className="text-xs text-muted-foreground text-center">
-                  +{orderedStops.length - currentStopIndex - 4} {lang === 'ar' ? 'توقفات أخرى' : 'more stops'}
-                </p>
-              )}
             </div>
           </div>
         )}
@@ -664,12 +745,7 @@ const ActiveRide = () => {
       {/* Complete Ride button */}
       {boardedCount > 0 && !allCompleted && (
         <div className="border-t border-border bg-card p-4">
-          <Button
-            className="w-full"
-            size="lg"
-            variant="destructive"
-            onClick={completeRide}
-          >
+          <Button className="w-full" size="lg" variant="destructive" onClick={completeRide}>
             <Flag className="w-5 h-5 me-2" />
             {lang === 'ar'
               ? `إنهاء الرحلة (${boardedCount} راكب)`
