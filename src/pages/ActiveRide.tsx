@@ -422,20 +422,36 @@ const ActiveRide = () => {
     toast({ title: lang === 'ar' ? 'تم إنهاء الرحلة ✓' : 'Ride completed! ✓' });
   };
 
-  const buildGoogleMapsUrl = (stopsOverride?: RouteStop[]) => {
+  // IDs of stops that actually have booked passengers
+  const bookedStopIds = new Set<string>();
+  bookings.forEach(b => {
+    if (['confirmed', 'boarded'].includes(b.status)) {
+      if (b.pickup_stop_id) bookedStopIds.add(b.pickup_stop_id);
+      if (b.dropoff_stop_id) bookedStopIds.add(b.dropoff_stop_id);
+      if (!b.pickup_stop_id && b.custom_pickup_lat) {
+        const nearest = findNearestStop(b.custom_pickup_lat, b.custom_pickup_lng);
+        if (nearest) bookedStopIds.add(nearest.id);
+      }
+      if (!b.dropoff_stop_id && b.custom_dropoff_lat) {
+        const nearest = findNearestStop(b.custom_dropoff_lat, b.custom_dropoff_lng);
+        if (nearest) bookedStopIds.add(nearest.id);
+      }
+    }
+  });
+
+  const buildGoogleMapsUrl = (fromIndex?: number) => {
     if (!route) return null;
 
-    const orderedStops = (stopsOverride && stopsOverride.length > 0)
-      ? stopsOverride
-      : routeStops.length > 0
-        ? routeStops
-        : activeStops.map(({ stop }) => stop);
+    // Only include route stops that have at least one booking
+    const relevantStops = routeStops
+      .slice(fromIndex ?? 0)
+      .filter(stop => bookedStopIds.has(stop.id));
 
     const origin = driverLocation
       ? `${driverLocation.lat},${driverLocation.lng}`
       : `${route.origin_lat},${route.origin_lng}`;
     const destination = `${route.destination_lat},${route.destination_lng}`;
-    const waypoints = orderedStops.map(stop => `${stop.lat},${stop.lng}`).join('|');
+    const waypoints = relevantStops.map(stop => `${stop.lat},${stop.lng}`).join('|');
 
     return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&waypoints=${waypoints}&travelmode=driving`;
   };
@@ -569,7 +585,7 @@ const ActiveRide = () => {
 
             {/* Navigate to this stop and remaining stops */}
             <a
-              href={buildGoogleMapsUrl(routeStops.slice(currentRouteStopIndex)) || undefined}
+              href={buildGoogleMapsUrl(currentRouteStopIndex) || undefined}
               target="_blank" rel="noopener noreferrer" className="mb-4 block"
             >
               <Button variant="secondary" className="w-full gap-2">
