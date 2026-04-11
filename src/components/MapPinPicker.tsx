@@ -61,11 +61,14 @@ const MapPinPicker = ({ activePin, origin, destination, onConfirm, onCancel, cla
   }, [isLoaded, origin?.lat, origin?.lng, destination?.lat, destination?.lng]);
 
   const getInitialCenter = () => {
-    if (activePin === 'origin' && origin?.lat) return { lat: origin.lat, lng: origin.lng };
-    if (activePin === 'destination' && destination?.lat) return { lat: destination.lat, lng: destination.lng };
-    if (origin?.lat) return { lat: origin.lat, lng: origin.lng };
-    if (destination?.lat) return { lat: destination.lat, lng: destination.lng };
-    return cairoCenter;
+    if (initialCenterRef.current) return initialCenterRef.current;
+    let c = cairoCenter;
+    if (activePin === 'origin' && origin?.lat) c = { lat: origin.lat, lng: origin.lng };
+    else if (activePin === 'destination' && destination?.lat) c = { lat: destination.lat, lng: destination.lng };
+    else if (origin?.lat) c = { lat: origin.lat, lng: origin.lng };
+    else if (destination?.lat) c = { lat: destination.lat, lng: destination.lng };
+    initialCenterRef.current = c;
+    return c;
   };
 
   const handleConfirm = () => {
