@@ -324,16 +324,9 @@ const TrackShuttle = () => {
     return () => clearInterval(interval);
   }, [shuttle?.id]);
 
-  // Determine if trip departure is in the future (don't trust stale shuttle GPS)
-  const tripDepartureMs = (() => {
-    if (!booking) return 0;
-    const [hh, mm, ss] = (booking.scheduled_time || '08:00:00').split(':').map(Number);
-    const dep = new Date(booking.scheduled_date + 'T00:00:00');
-    dep.setHours(hh, mm, ss || 0);
-    return dep.getTime();
-  })();
-  const tripNotStartedYet = tripDepartureMs > Date.now();
-  const hasLiveGps = !!(shuttle?.current_lat && shuttle?.current_lng && !tripNotStartedYet);
+  // Determine if trip has started based on shuttle status (driver sets it to 'active' when starting)
+  const shuttleIsActive = shuttle?.status === 'active';
+  const hasLiveGps = !!(shuttle?.current_lat && shuttle?.current_lng && shuttleIsActive);
   const isBoarded = booking?.status === 'boarded';
 
   // Build tracking markers: shuttle → stops before user → YOU
