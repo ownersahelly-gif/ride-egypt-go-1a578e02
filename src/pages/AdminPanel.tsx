@@ -751,7 +751,6 @@ const AdminPanel = () => {
                         />
                         {stopForm.lat !== 0 && <p className="text-xs text-muted-foreground">{stopForm.lat.toFixed(4)}, {stopForm.lng.toFixed(4)}</p>}
                       </div>
-                      </div>
                       <Button size="sm" onClick={() => addStop(route.id)} disabled={!stopForm.name_en || !stopForm.name_ar || stopForm.lat === 0 || addingStop}>
                         {addingStop ? <Loader2 className="w-3.5 h-3.5 animate-spin me-1" /> : <Plus className="w-3.5 h-3.5 me-1" />}
                         {lang === 'ar' ? 'إضافة' : 'Add Stop'}
