@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { toast } from 'sonner';
 import MapView from '@/components/MapView';
+import PlacesAutocomplete from '@/components/PlacesAutocomplete';
 import {
   ChevronLeft, Route, Users, Car, Ticket, BarChart3, Plus, Edit, Trash2,
   CheckCircle2, XCircle, MapPin, Clock, Search, Globe, LogOut, Shield,
@@ -113,6 +114,19 @@ const AdminPanel = () => {
     }
 
     setRoutes(routesRes.data || []);
+
+    // Fetch all stops grouped by route for stop counts
+    const allRouteIds = (routesRes.data || []).map((r: any) => r.id);
+    if (allRouteIds.length > 0) {
+      const { data: allStops } = await supabase.from('stops').select('*').in('route_id', allRouteIds).order('stop_order');
+      const stopsMap: Record<string, any[]> = {};
+      (allStops || []).forEach((s: any) => {
+        if (!stopsMap[s.route_id]) stopsMap[s.route_id] = [];
+        stopsMap[s.route_id].push(s);
+      });
+      setRouteStopsMap(stopsMap);
+    }
+
     setApplications(appsRes.data || []);
     setShuttles(shuttlesRes.data || []);
     const bks = bookingsRes.data || [];
@@ -629,6 +643,10 @@ const AdminPanel = () => {
                 <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
                   <span>{route.price} EGP</span>
                   <span><Clock className="w-3 h-3 inline me-1" />{route.estimated_duration_minutes} min</span>
+                  <span className="flex items-center gap-1">
+                    <ListOrdered className="w-3 h-3 inline" />
+                    {routeStopsMap[route.id]?.length || 0} {lang === 'ar' ? 'نقاط' : 'stops'}
+                  </span>
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   <Button size="sm" variant="outline" onClick={() => startEditRoute(route)}>
@@ -712,7 +730,15 @@ const AdminPanel = () => {
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs flex items-center gap-1"><MapPin className="w-3 h-3" /> {lang === 'ar' ? 'الموقع (انقر على الخريطة)' : 'Location (click on map)'}</Label>
+                        <Label className="text-xs flex items-center gap-1"><Search className="w-3 h-3" /> {lang === 'ar' ? 'ابحث عن الموقع' : 'Search location'}</Label>
+                        <PlacesAutocomplete
+                          placeholder={lang === 'ar' ? 'ابحث عن موقع...' : 'Search for a place...'}
+                          onSelect={(place) => setStopForm(p => ({ ...p, lat: parseFloat(place.lat.toFixed(6)), lng: parseFloat(place.lng.toFixed(6)), name_en: p.name_en || place.name, name_ar: p.name_ar || place.name }))}
+                          iconColor="text-primary"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs flex items-center gap-1"><MapPin className="w-3 h-3" /> {lang === 'ar' ? 'أو انقر على الخريطة' : 'Or click on map'}</Label>
                         <MapView
                           className="h-[180px] rounded-lg overflow-hidden"
                           center={{ lat: stopForm.lat || route.origin_lat, lng: stopForm.lng || route.origin_lng }}
