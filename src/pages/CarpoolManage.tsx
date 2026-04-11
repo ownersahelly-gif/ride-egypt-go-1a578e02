@@ -167,7 +167,7 @@ const CarpoolManage = () => {
 
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
-      <div className="bg-primary text-primary-foreground px-4 pt-12 pb-4">
+      <div className="bg-primary text-primary-foreground px-4 pt-12 pb-4 shrink-0 safe-area-top">
         <button onClick={() => navigate('/carpool')} className="mb-3"><Back className="w-6 h-6" /></button>
         <h1 className="text-lg font-bold">{lang === 'ar' ? 'إدارة الرحلة' : 'Manage Ride'}</h1>
         <p className="text-sm text-primary-foreground/70 truncate">{route.origin_name} → {route.destination_name}</p>
@@ -183,7 +183,7 @@ const CarpoolManage = () => {
         />
       </div>
 
-      <div className="p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24">
         {/* Start/Stop Ride */}
         {acceptedReqs.length > 0 && (
           <Card className={rideStarted ? 'border-green-500 bg-green-500/5' : ''}>
