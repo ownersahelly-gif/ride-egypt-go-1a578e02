@@ -317,6 +317,7 @@ const TrackShuttle = () => {
         const { lat, lng, stopId, stopNameEn, stopNameAr, stopIndex, headingToStopId, headingToStopNameEn, headingToStopNameAr, headingToStopIndex } = payload.payload;
         if (lat && lng) {
           setShuttle((prev: any) => ({ ...prev, current_lat: lat, current_lng: lng, status: 'active' }));
+          updateSmoothPos({ lat, lng });
           setIsLive(true);
         }
         // Update stop-based status from boarding code anchoring
