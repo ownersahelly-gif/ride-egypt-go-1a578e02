@@ -10,7 +10,10 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "cap:sync": "npx cap sync && bash scripts/fix-ios-icon.sh",
+    "cap:build": "npm run build && npx cap sync && bash scripts/fix-ios-icon.sh",
+    "postbuild": "bash scripts/fix-ios-icon.sh"
   },
   "dependencies": {
     "@capacitor/cli": "^8.3.0",
