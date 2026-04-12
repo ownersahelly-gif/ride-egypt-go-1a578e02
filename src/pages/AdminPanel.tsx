@@ -1244,6 +1244,42 @@ const AdminPanel = () => {
           <div className="space-y-6">
             <h2 className="text-xl font-bold text-foreground">{lang === 'ar' ? 'الإعدادات' : 'Settings'}</h2>
 
+            {/* App Name Settings */}
+            <div className="bg-card border border-border rounded-xl p-6 max-w-lg">
+              <h3 className="font-semibold text-foreground mb-1 flex items-center gap-2">
+                <Edit className="w-5 h-5 text-primary" />
+                {lang === 'ar' ? 'اسم التطبيق' : 'App Name'}
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                {lang === 'ar'
+                  ? 'غيّر اسم التطبيق الذي يظهر للمستخدمين في كل مكان'
+                  : 'Change the app name shown to users everywhere'}
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <Label>{lang === 'ar' ? 'الاسم بالإنجليزية' : 'English Name'}</Label>
+                  <Input
+                    value={appNameEnSetting}
+                    onChange={(e) => setAppNameEnSetting(e.target.value)}
+                    placeholder="Massar"
+                    dir="ltr"
+                  />
+                </div>
+                <div>
+                  <Label>{lang === 'ar' ? 'الاسم بالعربية' : 'Arabic Name'}</Label>
+                  <Input
+                    value={appNameArSetting}
+                    onChange={(e) => setAppNameArSetting(e.target.value)}
+                    placeholder="مسار"
+                    dir="rtl"
+                  />
+                </div>
+                <Button onClick={saveAppName} disabled={savingAppName}>
+                  {savingAppName ? <Loader2 className="w-4 h-4 animate-spin" /> : (lang === 'ar' ? 'حفظ' : 'Save')}
+                </Button>
+              </div>
+            </div>
+
             <div className="bg-card border border-border rounded-xl p-6 max-w-lg">
               <h3 className="font-semibold text-foreground mb-1 flex items-center gap-2">
                 <Phone className="w-5 h-5 text-primary" />
