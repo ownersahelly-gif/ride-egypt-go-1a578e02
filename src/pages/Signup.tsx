@@ -108,6 +108,8 @@ const Signup = () => {
   const [carYear, setCarYear] = useState('');
   const [carPhoto, setCarPhoto] = useState<UploadedFile | null>(null);
   const [licenseNumber, setLicenseNumber] = useState('');
+  const [profilePhoto, setProfilePhoto] = useState<UploadedFile | null>(null);
+  const profilePhotoRef = useRef<HTMLInputElement>(null);
   const [wasUber, setWasUber] = useState(false);
   const [uberProof, setUberProof] = useState<UploadedFile | null>(null);
 
@@ -522,6 +524,38 @@ const Signup = () => {
           {/* Step 3: Car details + Uber/Careem */}
           {driverStep === 3 && (
             <>
+              {/* Profile Picture */}
+              <div className="flex flex-col items-center gap-2 mb-2">
+                <button
+                  type="button"
+                  onClick={() => profilePhotoRef.current?.click()}
+                  className="relative w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border-2 border-dashed border-primary/30 hover:border-primary transition-colors"
+                >
+                  {profilePhoto ? (
+                    <img src={profilePhoto.preview} alt="" className="w-24 h-24 rounded-full object-cover" />
+                  ) : (
+                    <Camera className="w-8 h-8 text-primary" />
+                  )}
+                  <div className="absolute bottom-0 inset-x-0 bg-primary/80 text-primary-foreground text-[10px] py-0.5 text-center">
+                    {lang === 'ar' ? 'صورتك' : 'Your Photo'}
+                  </div>
+                </button>
+                <input
+                  ref={profilePhotoRef}
+                  type="file"
+                  accept="image/*"
+                  capture="user"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) setProfilePhoto({ file, preview: URL.createObjectURL(file) });
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {lang === 'ar' ? 'صورة البروفايل (ستظهر للركاب)' : 'Profile picture (visible to riders)'}
+                </p>
+              </div>
+
               <div className="space-y-2">
                 <Label>{lang === 'ar' ? 'ماركة السيارة' : 'Car Brand'}</Label>
                 <Input placeholder={lang === 'ar' ? 'مثال: تويوتا' : 'e.g. Toyota'} value={carBrand} onChange={(e) => setCarBrand(e.target.value)} required />
