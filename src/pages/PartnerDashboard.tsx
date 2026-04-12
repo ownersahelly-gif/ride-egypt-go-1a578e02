@@ -359,13 +359,12 @@ const PartnerDashboard = () => {
                 <Label className="text-xs">{lang === 'ar' ? 'نقطة الانطلاق' : 'Origin'}</Label>
                 <PlacesAutocomplete
                   value={routeForm.origin_name}
-                  onChange={val => setRouteForm(p => ({ ...p, origin_name: val }))}
                   onSelect={place => {
                     setRouteForm(p => ({
                       ...p,
-                      origin_name: place.description,
-                      origin_lat: place.lat || p.origin_lat,
-                      origin_lng: place.lng || p.origin_lng,
+                      origin_name: place.name,
+                      origin_lat: place.lat,
+                      origin_lng: place.lng,
                     }));
                   }}
                   placeholder={lang === 'ar' ? 'ابحث عن نقطة الانطلاق' : 'Search origin'}
@@ -375,13 +374,12 @@ const PartnerDashboard = () => {
                 <Label className="text-xs">{lang === 'ar' ? 'الوجهة' : 'Destination'}</Label>
                 <PlacesAutocomplete
                   value={routeForm.destination_name}
-                  onChange={val => setRouteForm(p => ({ ...p, destination_name: val }))}
                   onSelect={place => {
                     setRouteForm(p => ({
                       ...p,
-                      destination_name: place.description,
-                      destination_lat: place.lat || p.destination_lat,
-                      destination_lng: place.lng || p.destination_lng,
+                      destination_name: place.name,
+                      destination_lat: place.lat,
+                      destination_lng: place.lng,
                     }));
                   }}
                   placeholder={lang === 'ar' ? 'ابحث عن الوجهة' : 'Search destination'}
