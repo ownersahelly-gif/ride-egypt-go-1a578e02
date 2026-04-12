@@ -415,6 +415,21 @@ const MyBookings = () => {
                     </div>
                   )}
 
+                   {/* Cancelled trip banner */}
+                  {booking.status === 'cancelled' && !booking.skipped_at && (
+                    <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 mb-3 flex items-start gap-2">
+                      <Ban className="w-5 h-5 text-destructive mt-0.5 shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-sm font-bold text-destructive">
+                          {lang === 'ar' ? 'تم إلغاء هذه الرحلة' : 'This trip has been cancelled'}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {lang === 'ar' ? 'لا يمكنك التتبع أو المحادثة في الرحلات الملغاة' : 'Tracking and chat are disabled for cancelled trips'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-primary">{booking.total_price} EGP</span>
                     <div className="flex items-center gap-2">
@@ -447,6 +462,15 @@ const MyBookings = () => {
                         <Button variant="destructive" size="sm" onClick={() => setConfirmCancelId(booking.id)}
                           disabled={cancellingId === booking.id}>
                           {cancellingId === booking.id ? (lang === 'ar' ? 'جاري...' : 'Cancelling...') : t('booking.cancel')}
+                        </Button>
+                      )}
+                      {booking.status === 'cancelled' && !booking.skipped_at && parseFloat(booking.total_price || 0) > 0 && (
+                        <Button variant="outline" size="sm" onClick={() => requestRefund(booking)}
+                          disabled={requestingRefund === booking.id}>
+                          <RotateCcw className="w-3.5 h-3.5 me-1" />
+                          {requestingRefund === booking.id
+                            ? (lang === 'ar' ? 'جاري...' : 'Sending...')
+                            : (lang === 'ar' ? 'طلب استرداد' : 'Request Refund')}
                         </Button>
                       )}
                       {booking.status === 'completed' && (
@@ -486,31 +510,62 @@ const MyBookings = () => {
         />
       )}
 
-      {/* Cancel Confirmation Dialog */}
-      {confirmCancelId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-card border border-border rounded-2xl p-6 w-[90%] max-w-sm shadow-xl space-y-4">
-            <div className="text-center">
-              <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-2" />
-              <h3 className="text-lg font-bold text-foreground">
-                {lang === 'ar' ? 'إلغاء الحجز؟' : 'Cancel Booking?'}
-              </h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                {lang === 'ar' ? 'هل أنت متأكد؟ لا يمكن التراجع عن هذا الإجراء.' : 'Are you sure? This action cannot be undone.'}
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setConfirmCancelId(null)}>
-                {lang === 'ar' ? 'لا، ارجع' : 'No, Go Back'}
-              </Button>
-              <Button variant="destructive" className="flex-1" onClick={() => cancelBooking(confirmCancelId)}
-                disabled={cancellingId === confirmCancelId}>
-                {cancellingId === confirmCancelId ? (lang === 'ar' ? 'جاري...' : 'Cancelling...') : (lang === 'ar' ? 'نعم، إلغاء' : 'Yes, Cancel')}
-              </Button>
+      {/* Cancel Confirmation Dialog with refund policy */}
+      {confirmCancelId && (() => {
+        const bk = bookings.find(b => b.id === confirmCancelId);
+        const [h2, m2] = (bk?.scheduled_time || '00:00').split(':').map(Number);
+        const dep = new Date((bk?.scheduled_date || '') + 'T00:00:00');
+        dep.setHours(h2, m2, 0);
+        const hoursLeft = (dep.getTime() - Date.now()) / (1000 * 60 * 60);
+        const willRefund = hoursLeft > 24;
+        const refundAmt = willRefund ? Math.round(parseFloat(bk?.total_price || 0) * 0.5 * 100) / 100 : 0;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-card border border-border rounded-2xl p-6 w-[90%] max-w-sm shadow-xl space-y-4">
+              <div className="text-center">
+                <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-2" />
+                <h3 className="text-lg font-bold text-foreground">
+                  {lang === 'ar' ? 'إلغاء الحجز؟' : 'Cancel Booking?'}
+                </h3>
+              </div>
+              <div className="bg-surface rounded-lg p-3 space-y-2 text-sm">
+                {willRefund ? (
+                  <div className="flex items-start gap-2">
+                    <RotateCcw className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                    <p className="text-foreground">
+                      {lang === 'ar'
+                        ? `سيتم استرداد ${refundAmt} جنيه (50%) إلى محفظتك`
+                        : `${refundAmt} EGP (50%) will be refunded to your wallet`}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2">
+                    <Ban className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                    <p className="text-destructive font-medium">
+                      {lang === 'ar'
+                        ? 'لا يوجد استرداد — الإلغاء خلال 24 ساعة من موعد الرحلة'
+                        : 'No refund — cancelling within 24 hours of departure'}
+                    </p>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {lang === 'ar' ? 'هذا الإجراء لا يمكن التراجع عنه.' : 'This action cannot be undone.'}
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1" onClick={() => setConfirmCancelId(null)}>
+                  {lang === 'ar' ? 'لا، ارجع' : 'No, Go Back'}
+                </Button>
+                <Button variant="destructive" className="flex-1" onClick={() => cancelBooking(confirmCancelId)}
+                  disabled={cancellingId === confirmCancelId}>
+                  {cancellingId === confirmCancelId ? (lang === 'ar' ? 'جاري...' : 'Cancelling...') : (lang === 'ar' ? 'نعم، إلغاء' : 'Yes, Cancel')}
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Ride Receipt Modal */}
       {receiptBooking && (
