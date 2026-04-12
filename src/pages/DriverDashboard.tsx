@@ -987,14 +987,14 @@ const DriverDashboard = () => {
                         );
                       })}
 
-                      {tripSlots.length > 3 && (
+                      {tripSlots.length > 2 && (
                         <button
                           onClick={() => setShowAllUpcoming(!showAllUpcoming)}
                           className="w-full text-center text-sm text-primary hover:underline py-2"
                         >
                           {showAllUpcoming
                             ? (lang === 'ar' ? 'عرض أقل' : 'Show less')
-                            : (lang === 'ar' ? `عرض الكل (${tripSlots.length} رحلة)` : `Show all (${tripSlots.length} trips)`)}
+                            : (lang === 'ar' ? `عرض الكل (${tripSlots.length} رحلة)` : `See more (${tripSlots.length} trips)`)}
                         </button>
                       )}
 
