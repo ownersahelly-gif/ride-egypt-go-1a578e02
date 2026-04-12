@@ -96,19 +96,12 @@ const BookRide = () => {
   const [step, setStep] = useState<'browse' | 'details'>('browse');
 
   // Pickup
-  const [pickupMode, setPickupMode] = useState<'start' | 'nearby'>('start');
-  const [customPickup, setCustomPickup] = useState<PointSelection>(null);
-  const [validatingPickup, setValidatingPickup] = useState(false);
-  const [pickupResult, setPickupResult] = useState<{ ok: boolean; minutes: number; onRoute: boolean } | null>(null);
+  const [pickupMode, setPickupMode] = useState<'start' | 'stop'>('start');
+  const [selectedPickupStop, setSelectedPickupStop] = useState<any>(null);
 
   // Dropoff
-  const [dropoffMode, setDropoffMode] = useState<'end' | 'nearby'>('end');
-  const [customDropoff, setCustomDropoff] = useState<PointSelection>(null);
-  const [validatingDropoff, setValidatingDropoff] = useState(false);
-  const [dropoffResult, setDropoffResult] = useState<{ ok: boolean; minutes: number; onRoute: boolean } | null>(null);
-
-  // Which one is being set via map click
-  const [mapClickTarget, setMapClickTarget] = useState<'pickup' | 'dropoff'>('pickup');
+  const [dropoffMode, setDropoffMode] = useState<'end' | 'stop'>('end');
+  const [selectedDropoffStop, setSelectedDropoffStop] = useState<any>(null);
 
   // Trip direction
   const [tripDirection, setTripDirection] = useState<'go' | 'return' | 'both'>('both');
