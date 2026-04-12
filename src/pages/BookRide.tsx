@@ -8,68 +8,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import MapView from '@/components/MapView';
-import MapPinPicker from '@/components/MapPinPicker';
 import PlacesAutocomplete from '@/components/PlacesAutocomplete';
 import {
-  MapPin, Clock, Users, ArrowRight, Search, ChevronLeft, ChevronRight,
-  Calendar, AlertCircle, Car, User as UserIcon, Loader2, CheckCircle2, XCircle,
+  MapPin, Clock, Users, ArrowRight, ChevronLeft, ChevronRight,
+  Calendar, AlertCircle, Car, User as UserIcon, Loader2, CheckCircle2,
   Navigation, Upload, Image as ImageIcon, ListOrdered, Phone, History, Package, Bookmark
 } from 'lucide-react';
-
-const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
-
-/** Check if a point is close to the route polyline (within ~50m) */
-const isPointOnRoute = (
-  point: { lat: number; lng: number },
-  routeResult: any,
-): boolean => {
-  if (!routeResult || typeof google === 'undefined' || !google?.maps) return false;
-  const path = routeResult.routes[0]?.overview_path;
-  if (!path) return false;
-  const pt = new google.maps.LatLng(point.lat, point.lng);
-  const isOnPoly = google.maps.geometry?.poly?.isLocationOnEdge(pt, new google.maps.Polyline({ path }), 5e-4);
-  if (isOnPoly) return true;
-  // Fallback: check distance to each path point
-  for (const p of path) {
-    const dist = google.maps.geometry?.spherical?.computeDistanceBetween(pt, p);
-    if (dist !== undefined && dist < 80) return true;
-  }
-  return false;
-};
-
-/** Calculate driving-time deviation: prevStop → custom → nextStop vs prevStop → nextStop */
-const calcDeviation = (
-  prevStop: { lat: number; lng: number },
-  nextStop: { lat: number; lng: number },
-  customPoint: { lat: number; lng: number },
-): Promise<number> => {
-  if (typeof google === 'undefined' || !google?.maps?.DirectionsService) return Promise.resolve(999);
-  const ds = new google.maps.DirectionsService();
-  const directReq = (): Promise<number> =>
-    new Promise((res) =>
-      ds.route(
-        { origin: prevStop, destination: nextStop, travelMode: google.maps.TravelMode.DRIVING },
-        (r, s) => res(s === 'OK' && r ? (r.routes[0]?.legs[0]?.duration?.value ?? 0) : 0),
-      ),
-    );
-  const detourReq = (): Promise<number> =>
-    new Promise((res) =>
-      ds.route(
-        {
-          origin: prevStop,
-          destination: nextStop,
-          waypoints: [{ location: customPoint, stopover: true }],
-          travelMode: google.maps.TravelMode.DRIVING,
-        },
-        (r, s) => {
-          if (s !== 'OK' || !r) return res(99999);
-          const legs = r.routes[0]?.legs ?? [];
-          res(legs.reduce((sum, l) => sum + (l.duration?.value ?? 0), 0));
-        },
-      ),
-    );
-  return Promise.all([directReq(), detourReq()]).then(([direct, detour]) => (detour - direct) / 60);
-};
 
 /** Haversine distance in km */
 const haversineDistanceKm = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
@@ -114,10 +58,10 @@ const BookRide = () => {
   const [driverProfile, setDriverProfile] = useState<any>(null);
   const [shuttleInfo, setShuttleInfo] = useState<any>(null);
 
-  // Route directions result for on-route checking
+  // Route directions result
   const [routeDirections, setRouteDirections] = useState<any>(null);
 
-  // Route stops for waypoints
+  // Route stops
   const [routeStops, setRouteStops] = useState<any[]>([]);
 
   // Saved locations
@@ -177,7 +121,7 @@ const BookRide = () => {
     setLoadingRides(false);
   };
 
-  // Fetch route directions when ride is selected (for on-route checking)
+  // Fetch route directions when ride is selected
   useEffect(() => {
     if (!selectedRide?.routes || typeof google === 'undefined' || !google?.maps?.DirectionsService) { setRouteDirections(null); return; }
     const ds = new google.maps.DirectionsService();
@@ -213,17 +157,14 @@ const BookRide = () => {
     setSelectedRide(ride);
     setDriverProfile(ride.driver_profile);
     setShuttleInfo(ride.shuttle_info);
-    setCustomPickup(null);
-    setCustomDropoff(null);
-    setPickupResult(null);
-    setDropoffResult(null);
+    setSelectedPickupStop(null);
+    setSelectedDropoffStop(null);
     setPickupMode('start');
     setDropoffMode('end');
     setUseBundle(false);
     setTripDirection('both');
     setStep('details');
 
-    // Fetch stops for this route
     const { data: stops } = await supabase
       .from('stops')
       .select('*')
@@ -232,7 +173,6 @@ const BookRide = () => {
     setRouteStops(stops || []);
 
     if (user && ride.route_id) {
-      // Fetch saved locations, bundles, and active bundle purchases in parallel
       const [{ data: savedLocs }, { data: bundles }, { data: purchases }] = await Promise.all([
         supabase.from('saved_locations').select('*').eq('user_id', user.id).eq('route_id', ride.route_id).order('use_count', { ascending: false }).limit(5),
         supabase.from('ride_bundles').select('*').eq('route_id', ride.route_id).eq('is_active', true),
@@ -247,116 +187,37 @@ const BookRide = () => {
   const filteredRides = rideInstances.filter((ri) => {
     const route = ri.routes;
     if (!route) return false;
-
-    // Filter by pickup search
     if (searchPickup) {
       const q = searchPickup.toLowerCase();
       const originEn = route.origin_name_en?.toLowerCase() || '';
       const originAr = route.origin_name_ar || '';
       const destEn = route.destination_name_en?.toLowerCase() || '';
       const destAr = route.destination_name_ar || '';
-      // For "go" rides, pickup = origin; for "return" rides, pickup = destination
       const matchesPickup = ri.direction === 'return'
         ? (destEn.startsWith(q) || destAr.startsWith(q))
         : (originEn.startsWith(q) || originAr.startsWith(q));
       if (!matchesPickup) return false;
     }
-
-    // Filter by dropoff search
     if (searchDropoff) {
       const q = searchDropoff.toLowerCase();
       const originEn = route.origin_name_en?.toLowerCase() || '';
       const originAr = route.origin_name_ar || '';
       const destEn = route.destination_name_en?.toLowerCase() || '';
       const destAr = route.destination_name_ar || '';
-      // For "go" rides, dropoff = destination; for "return" rides, dropoff = origin
       const matchesDropoff = ri.direction === 'return'
         ? (originEn.startsWith(q) || originAr.startsWith(q))
         : (destEn.startsWith(q) || destAr.startsWith(q));
       if (!matchesDropoff) return false;
     }
-
     return true;
   });
 
-  // --- Validate a custom point (pickup or dropoff) ---
-  const validateCustomPoint = useCallback(async (
-    point: { lat: number; lng: number; name: string },
-    type: 'pickup' | 'dropoff',
-  ) => {
-    if (!selectedRide?.routes) return;
-    const setValidating = type === 'pickup' ? setValidatingPickup : setValidatingDropoff;
-    const setResult = type === 'pickup' ? setPickupResult : setDropoffResult;
-    const setCustom = type === 'pickup' ? setCustomPickup : setCustomDropoff;
-
-    setValidating(true);
-    setResult(null);
-    setCustom(point);
-
-    // Check if point is on the route polyline
-    const onRoute = isPointOnRoute(point, routeDirections);
-    if (onRoute) {
-      setResult({ ok: true, minutes: 0, onRoute: true });
-      setValidating(false);
-      if (type === 'pickup') scrollToDropoff();
-      return;
-    }
-
-    // Not on route — check deviation
-    const origin = { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng };
-    const dest = { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng };
-
-    try {
-      const deviation = await calcDeviation(origin, dest, point);
-      const ok = deviation <= 5;
-      setResult({ ok, minutes: Math.round(deviation * 10) / 10, onRoute: false });
-      if (ok && type === 'pickup') scrollToDropoff();
-      if (!ok) {
-        toast({
-          title: lang === 'ar' ? 'موقع بعيد عن المسار' : 'Too far from route',
-          description: lang === 'ar'
-            ? `هذا الموقع سيضيف ${Math.round(deviation)} دقائق إنحراف (الحد الأقصى 5 دقائق)`
-            : `This location adds ${Math.round(deviation)} min deviation (max 5 min allowed)`,
-          variant: 'destructive',
-        });
-      }
-    } catch {
-      setResult({ ok: false, minutes: 99, onRoute: false });
-    }
-    setValidating(false);
-  }, [selectedRide, routeDirections, lang, toast]);
-
-  const handleMapPinConfirm = useCallback((target: 'pickup' | 'dropoff', point: { lat: number; lng: number; name: string }) => {
-    validateCustomPoint(point, target);
-  }, [validateCustomPoint]);
-
   // --- Validity ---
-  const isPickupValid = pickupMode === 'start' ? true : (!!customPickup && pickupResult?.ok === true);
-  const isDropoffValid = dropoffMode === 'end' ? true : (!!customDropoff && dropoffResult?.ok === true);
+  const isPickupValid = pickupMode === 'start' ? true : !!selectedPickupStop;
+  const isDropoffValid = dropoffMode === 'end' ? true : !!selectedDropoffStop;
 
-  // Distance-based pricing: price proportional to km traveled
-  const calcDynamicPrice = useCallback(() => {
-    if (!selectedRide?.routes) return selectedRide?.routes?.price || 0;
-    const route = selectedRide.routes;
-    const fullRouteKm = haversineDistanceKm(
-      { lat: route.origin_lat, lng: route.origin_lng },
-      { lat: route.destination_lat, lng: route.destination_lng }
-    );
-    if (fullRouteKm < 0.1) return route.price;
-
-    const pLat = pickupMode === 'start' ? route.origin_lat : (customPickup?.lat ?? route.origin_lat);
-    const pLng = pickupMode === 'start' ? route.origin_lng : (customPickup?.lng ?? route.origin_lng);
-    const dLat = dropoffMode === 'end' ? route.destination_lat : (customDropoff?.lat ?? route.destination_lat);
-    const dLng = dropoffMode === 'end' ? route.destination_lng : (customDropoff?.lng ?? route.destination_lng);
-
-    const passengerKm = haversineDistanceKm({ lat: pLat, lng: pLng }, { lat: dLat, lng: dLng });
-    const ratio = Math.min(1, passengerKm / fullRouteKm);
-    // Minimum 30% of full price
-    const adjustedRatio = Math.max(0.3, ratio);
-    return Math.round(route.price * adjustedRatio);
-  }, [selectedRide, pickupMode, dropoffMode, customPickup, customDropoff]);
-
-  const dynamicPrice = calcDynamicPrice();
+  // Dynamic price - use route price directly
+  const dynamicPrice = selectedRide?.routes?.price || 0;
 
   // InstaPay payment proof
   const [paymentProof, setPaymentProof] = useState<File | null>(null);
@@ -366,13 +227,6 @@ const BookRide = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropoffRef = useRef<HTMLDivElement>(null);
 
-  const scrollToDropoff = () => {
-    setTimeout(() => {
-      dropoffRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 200);
-  };
-
-  // Fetch InstaPay phone number
   useEffect(() => {
     supabase.from('app_settings').select('value').eq('key', 'instapay_phone').single()
       .then(({ data }) => { if (data) setInstapayPhone(data.value); });
@@ -382,7 +236,7 @@ const BookRide = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) {
-      toast({ title: lang === 'ar' ? 'الملف كبير جداً' : 'File too large', description: lang === 'ar' ? 'الحد الأقصى 5 ميجا' : 'Max 5MB', variant: 'destructive' });
+      toast({ title: lang === 'ar' ? 'الملف كبير جداً' : 'File too large', variant: 'destructive' });
       return;
     }
     setPaymentProof(file);
@@ -390,6 +244,45 @@ const BookRide = () => {
   };
 
   const isRideFull = selectedRide?.available_seats === 0;
+
+  // Find closest stop to a searched location
+  const findClosestStop = (point: { lat: number; lng: number }, stopType?: 'pickup' | 'dropoff'): any | null => {
+    if (!routeStops.length) return null;
+    let filteredStops = routeStops;
+    if (stopType === 'pickup') {
+      filteredStops = routeStops.filter(s => s.stop_type === 'pickup' || s.stop_type === 'both');
+    } else if (stopType === 'dropoff') {
+      filteredStops = routeStops.filter(s => s.stop_type === 'dropoff' || s.stop_type === 'both');
+    }
+    if (!filteredStops.length) filteredStops = routeStops;
+    let closest = filteredStops[0];
+    let minDist = haversineDistanceKm(point, { lat: closest.lat, lng: closest.lng });
+    for (let i = 1; i < filteredStops.length; i++) {
+      const d = haversineDistanceKm(point, { lat: filteredStops[i].lat, lng: filteredStops[i].lng });
+      if (d < minDist) { minDist = d; closest = filteredStops[i]; }
+    }
+    return closest;
+  };
+
+  const handleSearchAndMatchStop = (place: { lat: number; lng: number; name: string }, type: 'pickup' | 'dropoff') => {
+    const closest = findClosestStop(place, type);
+    if (closest) {
+      if (type === 'pickup') {
+        setSelectedPickupStop(closest);
+        setPickupMode('stop');
+      } else {
+        setSelectedDropoffStop(closest);
+        setDropoffMode('stop');
+      }
+      const dist = haversineDistanceKm(place, { lat: closest.lat, lng: closest.lng });
+      toast({
+        title: lang === 'ar' ? '📍 أقرب نقطة توقف' : '📍 Nearest stop matched',
+        description: lang === 'ar'
+          ? `${closest.name_ar} (${dist.toFixed(1)} كم)`
+          : `${closest.name_en} (${dist.toFixed(1)} km away)`,
+      });
+    }
+  };
 
   // --- Booking ---
   const handleBook = async (asWaitlist = false) => {
@@ -400,7 +293,7 @@ const BookRide = () => {
     }
     const usingBundle = useBundle && activeBundlePurchase;
     if (!asWaitlist && !usingBundle && !paymentProof) {
-      toast({ title: lang === 'ar' ? 'أرفق إثبات الدفع' : 'Attach payment proof', description: lang === 'ar' ? 'أرسل لقطة شاشة من InstaPay' : 'Upload InstaPay screenshot', variant: 'destructive' });
+      toast({ title: lang === 'ar' ? 'أرفق إثبات الدفع' : 'Attach payment proof', variant: 'destructive' });
       return;
     }
     if (!asWaitlist && selectedRide.available_seats < 1) {
@@ -410,8 +303,6 @@ const BookRide = () => {
     setLoading(true);
     try {
       let proofUrl: string | null = null;
-
-      // Upload payment proof (skip if using bundle)
       if (paymentProof && !usingBundle) {
         setUploadingProof(true);
         const ext = paymentProof.name.split('.').pop();
@@ -421,52 +312,41 @@ const BookRide = () => {
         setUploadingProof(false);
       }
 
-      // Calculate waitlist position
       let waitlistPos: number | null = null;
       if (asWaitlist) {
         const { data: existingWaitlist } = await supabase
-          .from('bookings')
-          .select('waitlist_position')
-          .eq('route_id', selectedRide.route_id)
-          .eq('scheduled_date', selectedRide.ride_date)
-          .eq('scheduled_time', selectedRide.departure_time)
-          .eq('status', 'waitlist')
-          .order('waitlist_position', { ascending: false })
-          .limit(1);
+          .from('bookings').select('waitlist_position')
+          .eq('route_id', selectedRide.route_id).eq('scheduled_date', selectedRide.ride_date)
+          .eq('scheduled_time', selectedRide.departure_time).eq('status', 'waitlist')
+          .order('waitlist_position', { ascending: false }).limit(1);
         waitlistPos = ((existingWaitlist?.[0]?.waitlist_position as number) || 0) + 1;
       }
 
-      // Get pickup/dropoff coords
-      const pickupLat = pickupMode === 'start' ? selectedRide.routes.origin_lat : customPickup?.lat;
-      const pickupLng = pickupMode === 'start' ? selectedRide.routes.origin_lng : customPickup?.lng;
-      const pickupName = pickupMode === 'start'
-        ? (lang === 'ar' ? selectedRide.routes.origin_name_ar : selectedRide.routes.origin_name_en)
-        : customPickup?.name;
-      const dropoffLat = dropoffMode === 'end' ? selectedRide.routes.destination_lat : customDropoff?.lat;
-      const dropoffLng = dropoffMode === 'end' ? selectedRide.routes.destination_lng : customDropoff?.lng;
-      const dropoffName = dropoffMode === 'end'
-        ? (lang === 'ar' ? selectedRide.routes.destination_name_ar : selectedRide.routes.destination_name_en)
-        : customDropoff?.name;
+      const route = selectedRide.routes;
+      const pickupLat = pickupMode === 'stop' && selectedPickupStop ? selectedPickupStop.lat : route.origin_lat;
+      const pickupLng = pickupMode === 'stop' && selectedPickupStop ? selectedPickupStop.lng : route.origin_lng;
+      const pickupName = pickupMode === 'stop' && selectedPickupStop
+        ? (lang === 'ar' ? selectedPickupStop.name_ar : selectedPickupStop.name_en)
+        : (lang === 'ar' ? route.origin_name_ar : route.origin_name_en);
+      const dropoffLat = dropoffMode === 'stop' && selectedDropoffStop ? selectedDropoffStop.lat : route.destination_lat;
+      const dropoffLng = dropoffMode === 'stop' && selectedDropoffStop ? selectedDropoffStop.lng : route.destination_lng;
+      const dropoffName = dropoffMode === 'stop' && selectedDropoffStop
+        ? (lang === 'ar' ? selectedDropoffStop.name_ar : selectedDropoffStop.name_en)
+        : (lang === 'ar' ? route.destination_name_ar : route.destination_name_en);
 
       const basePrice = dynamicPrice;
       const singlePrice = usingBundle ? 0 : basePrice;
       const bookingStatus = asWaitlist ? 'waitlist' : (usingBundle ? 'confirmed' : 'pending');
 
-      // For round trips ("both"), create TWO separate bookings
       const directions: ('go' | 'return')[] = tripDirection === 'both' ? ['go', 'return'] : [tripDirection as 'go' | 'return'];
 
-      // Find the return ride instance for this route+date if booking round trip
       let returnRideInstance: any = null;
       if (tripDirection === 'both') {
         const { data: returnRides } = await supabase
-          .from('ride_instances')
-          .select('*')
-          .eq('route_id', selectedRide.route_id)
-          .eq('ride_date', selectedRide.ride_date)
-          .eq('direction', 'return')
-          .eq('status', 'scheduled')
-          .order('departure_time')
-          .limit(1);
+          .from('ride_instances').select('*')
+          .eq('route_id', selectedRide.route_id).eq('ride_date', selectedRide.ride_date)
+          .eq('direction', 'return').eq('status', 'scheduled')
+          .order('departure_time').limit(1);
         returnRideInstance = returnRides?.[0] || null;
       }
 
@@ -497,7 +377,6 @@ const BookRide = () => {
       const { error } = await supabase.from('bookings').insert(bookingsToInsert);
       if (error) throw error;
 
-      // Deduct from bundle if using one (deduct per ride)
       if (usingBundle && activeBundlePurchase) {
         await supabase.from('bundle_purchases').update({
           rides_remaining: activeBundlePurchase.rides_remaining - directions.length,
@@ -508,7 +387,6 @@ const BookRide = () => {
         await supabase.from('ride_instances').update({
           available_seats: selectedRide.available_seats - 1,
         }).eq('id', selectedRide.id);
-        // Also decrement return ride instance seats
         if (returnRideInstance) {
           await supabase.from('ride_instances').update({
             available_seats: returnRideInstance.available_seats - 1,
@@ -516,14 +394,14 @@ const BookRide = () => {
         }
       }
 
-      // Save location for future use
+      // Save location
       if (user && selectedRide.route_id) {
         const existing = savedLocations.find(sl =>
           sl.pickup_lat === pickupLat && sl.pickup_lng === pickupLng &&
           sl.dropoff_lat === dropoffLat && sl.dropoff_lng === dropoffLng
         );
         if (existing) {
-          await supabase.from('saved_locations').update({ use_count: existing.use_count + 1 }).eq('id', existing.id);
+          await supabase.from('saved_locations').update({ use_count: (existing.use_count || 0) + 1 }).eq('id', existing.id);
         } else {
           await supabase.from('saved_locations').insert({
             user_id: user.id,
@@ -575,7 +453,6 @@ const BookRide = () => {
         const { uploadToBunny } = await import('@/lib/bunnyUpload');
         proofUrl = await uploadToBunny(paymentProof, filePath);
       }
-
       const expiresAt = new Date();
       if (bundle.bundle_type === 'weekly') expiresAt.setDate(expiresAt.getDate() + 7);
       else expiresAt.setDate(expiresAt.getDate() + 30);
@@ -596,46 +473,36 @@ const BookRide = () => {
         title: lang === 'ar' ? 'تم شراء الباقة!' : 'Bundle purchased!',
         description: lang === 'ar' ? `${bundle.ride_count} رحلة متاحة` : `${bundle.ride_count} rides available`,
       });
-
-      // Refresh bundle purchase
       const { data: purchases } = await supabase.from('bundle_purchases').select('*')
         .eq('user_id', user.id).eq('route_id', bundle.route_id).eq('status', 'active')
         .gt('rides_remaining', 0).gt('expires_at', new Date().toISOString()).limit(1);
       setActiveBundlePurchase(purchases?.[0] || null);
-      setPaymentProof(null);
-      setPaymentPreview(null);
-      setShowBundleSection(false);
+      setPaymentProof(null); setPaymentPreview(null); setShowBundleSection(false);
     } catch (error: any) {
       toast({ title: t('auth.error'), description: error.message, variant: 'destructive' });
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   // Apply saved location
   const applySavedLocation = (saved: any) => {
     if (saved.pickup_lat && saved.pickup_lng) {
-      const isDefaultPickup = saved.pickup_lat === selectedRide?.routes?.origin_lat && saved.pickup_lng === selectedRide?.routes?.origin_lng;
-      if (isDefaultPickup) {
-        setPickupMode('start');
-        setCustomPickup(null);
-        setPickupResult(null);
+      const closest = findClosestStop({ lat: saved.pickup_lat, lng: saved.pickup_lng }, 'pickup');
+      if (closest && haversineDistanceKm({ lat: saved.pickup_lat, lng: saved.pickup_lng }, { lat: closest.lat, lng: closest.lng }) < 0.5) {
+        setPickupMode('stop');
+        setSelectedPickupStop(closest);
       } else {
-        setPickupMode('nearby');
-        setCustomPickup({ lat: saved.pickup_lat, lng: saved.pickup_lng, name: saved.pickup_name });
-        setPickupResult({ ok: true, minutes: 0, onRoute: true });
+        setPickupMode('start');
+        setSelectedPickupStop(null);
       }
     }
     if (saved.dropoff_lat && saved.dropoff_lng) {
-      const isDefaultDropoff = saved.dropoff_lat === selectedRide?.routes?.destination_lat && saved.dropoff_lng === selectedRide?.routes?.destination_lng;
-      if (isDefaultDropoff) {
-        setDropoffMode('end');
-        setCustomDropoff(null);
-        setDropoffResult(null);
+      const closest = findClosestStop({ lat: saved.dropoff_lat, lng: saved.dropoff_lng }, 'dropoff');
+      if (closest && haversineDistanceKm({ lat: saved.dropoff_lat, lng: saved.dropoff_lng }, { lat: closest.lat, lng: closest.lng }) < 0.5) {
+        setDropoffMode('stop');
+        setSelectedDropoffStop(closest);
       } else {
-        setDropoffMode('nearby');
-        setCustomDropoff({ lat: saved.dropoff_lat, lng: saved.dropoff_lng, name: saved.dropoff_name });
-        setDropoffResult({ ok: true, minutes: 0, onRoute: true });
+        setDropoffMode('end');
+        setSelectedDropoffStop(null);
       }
     }
     toast({ title: lang === 'ar' ? 'تم تطبيق الموقع المحفوظ' : 'Saved location applied' });
@@ -650,171 +517,94 @@ const BookRide = () => {
       { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng, label: 'A', color: 'green' },
       { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng, label: 'B', color: 'red' },
     );
-  }
-  if (customPickup && pickupMode === 'nearby') {
-    mapMarkers.push({ lat: customPickup.lat, lng: customPickup.lng, label: '📍', color: 'green' });
-  }
-  if (customDropoff && dropoffMode === 'nearby') {
-    mapMarkers.push({ lat: customDropoff.lat, lng: customDropoff.lng, label: '📍', color: 'red' });
+    if (selectedPickupStop && pickupMode === 'stop') {
+      mapMarkers.push({ lat: selectedPickupStop.lat, lng: selectedPickupStop.lng, label: '📍', color: 'green' });
+    }
+    if (selectedDropoffStop && dropoffMode === 'stop') {
+      mapMarkers.push({ lat: selectedDropoffStop.lat, lng: selectedDropoffStop.lng, label: '📍', color: 'red' });
+    }
+    routeStops.forEach((stop: any) => {
+      mapMarkers.push({ lat: stop.lat, lng: stop.lng, label: (stop.stop_order + 1).toString(), color: 'blue' });
+    });
   }
 
-  const isNearbyMode = pickupMode === 'nearby' || dropoffMode === 'nearby';
-
-  // --- Render helper for point selection (shared by pickup & dropoff) ---
-  const renderPointSelector = (
-    type: 'pickup' | 'dropoff',
-    mode: 'start' | 'end' | 'nearby',
-    setMode: (m: any) => void,
-    customPoint: PointSelection,
-    validating: boolean,
-    result: { ok: boolean; minutes: number; onRoute: boolean } | null,
-  ) => {
-    const isPickup = type === 'pickup';
-    const startLabel = isPickup
+  // --- Stop selector (matching Dashboard pattern) ---
+  const renderStopSelector = (type: 'pickup' | 'dropoff') => {
+    const isPickupType = type === 'pickup';
+    const mode = isPickupType ? pickupMode : dropoffMode;
+    const selectedStop = isPickupType ? selectedPickupStop : selectedDropoffStop;
+    const startLabel = isPickupType
       ? (lang === 'ar' ? '🚏 نقطة الانطلاق' : '🚏 Starting Point')
       : (lang === 'ar' ? '🏁 نقطة الوصول' : '🏁 End Point');
-    const nearbyLabel = lang === 'ar' ? '🗺️ موقع قريب (≤5 د)' : '🗺️ Nearby (≤5 min)';
-
+    const stopLabel = lang === 'ar' ? '📍 نقطة توقف' : '📍 Bus Stop';
     const isStartMode = mode === 'start' || mode === 'end';
 
-    return (
-      <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
-        <h3 className="font-semibold text-foreground flex items-center gap-1">
-          <MapPin className={`w-4 h-4 ${isPickup ? 'text-green-500' : 'text-destructive'}`} />
-          {isPickup
-            ? (lang === 'ar' ? 'نقطة الركوب' : 'Pickup Location')
-            : (lang === 'ar' ? 'نقطة النزول' : 'Dropoff Location')}
-        </h3>
+    const filteredStops = routeStops.filter((s: any) =>
+      isPickupType ? (s.stop_type === 'pickup' || s.stop_type === 'both') : (s.stop_type === 'dropoff' || s.stop_type === 'both')
+    );
 
+    return (
+      <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+        <h3 className="font-semibold text-foreground flex items-center gap-1 text-sm">
+          <MapPin className={`w-4 h-4 ${isPickupType ? 'text-green-500' : 'text-destructive'}`} />
+          {isPickupType ? (lang === 'ar' ? 'نقطة الركوب' : 'Pickup') : (lang === 'ar' ? 'نقطة النزول' : 'Dropoff')}
+        </h3>
         <div className="flex gap-2">
-          <button
-            onClick={() => {
-              if (isPickup) { setMode('start'); setCustomPickup(null); setPickupResult(null); scrollToDropoff(); }
-              else { setMode('end'); setCustomDropoff(null); setDropoffResult(null); }
-            }}
-            className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
-              isStartMode ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'
-            }`}>
+          <button onClick={() => {
+            if (isPickupType) { setPickupMode('start'); setSelectedPickupStop(null); }
+            else { setDropoffMode('end'); setSelectedDropoffStop(null); }
+          }} className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${isStartMode ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}>
             {startLabel}
           </button>
-          <button
-            onClick={() => {
-              setMode('nearby');
-              setMapClickTarget(type);
-              if (isPickup) { setCustomPickup(null); setPickupResult(null); }
-              else { setCustomDropoff(null); setDropoffResult(null); }
-            }}
-            className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
-              mode === 'nearby' ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'
-            }`}>
-            {nearbyLabel}
-          </button>
+          {filteredStops.length > 0 && (
+            <button onClick={() => {
+              if (isPickupType) { setPickupMode('stop'); setSelectedPickupStop(null); }
+              else { setDropoffMode('stop'); setSelectedDropoffStop(null); }
+            }} className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${mode === 'stop' ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}>
+              {stopLabel}
+            </button>
+          )}
         </div>
 
         {isStartMode && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-sm p-3 rounded-lg bg-green-50 text-green-700">
-              <CheckCircle2 className="w-4 h-4" />
-              <div>
-                <p className="font-medium">
-                  {isPickup
-                    ? (lang === 'ar' ? selectedRide?.routes?.origin_name_ar : selectedRide?.routes?.origin_name_en)
-                    : (lang === 'ar' ? selectedRide?.routes?.destination_name_ar : selectedRide?.routes?.destination_name_en)}
-                </p>
-                <p className="text-xs">
-                  {isPickup
-                    ? (lang === 'ar' ? 'الباص ينتظر 5 دقائق عند نقطة الانطلاق' : 'Bus waits 5 min at starting point')
-                    : (lang === 'ar' ? 'نقطة النهاية للمسار' : 'Route end point')}
-                </p>
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full gap-2"
-              onClick={() => {
-                const lat = isPickup ? selectedRide?.routes?.origin_lat : selectedRide?.routes?.destination_lat;
-                const lng = isPickup ? selectedRide?.routes?.origin_lng : selectedRide?.routes?.destination_lng;
-                const label = isPickup
-                  ? (lang === 'ar' ? selectedRide?.routes?.origin_name_ar : selectedRide?.routes?.origin_name_en)
-                  : (lang === 'ar' ? selectedRide?.routes?.destination_name_ar : selectedRide?.routes?.destination_name_en);
-                window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&destination_place_id=&travelmode=driving`, '_blank');
-              }}
-            >
-              <Navigation className="w-4 h-4" />
-              {lang === 'ar' ? 'فتح في خرائط جوجل' : 'Open in Google Maps'}
-            </Button>
+          <div className="flex items-center gap-2 text-sm p-3 rounded-lg bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <p className="font-medium text-xs">
+              {isPickupType ? (lang === 'ar' ? selectedRide?.routes?.origin_name_ar : selectedRide?.routes?.origin_name_en) : (lang === 'ar' ? selectedRide?.routes?.destination_name_ar : selectedRide?.routes?.destination_name_en)}
+            </p>
           </div>
         )}
 
-        {mode === 'nearby' && (
-          <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">
-              {lang === 'ar'
-                ? 'اضغط على الخريطة أو ابحث. إذا كان الموقع على المسار (الخط الأزرق) يتم قبوله تلقائياً. وإلا فالحد الأقصى 5 دقائق انحراف.'
-                : 'Tap the map or search. If on the route (blue line) it\'s auto-accepted. Otherwise max 5 min deviation.'}
-            </p>
-
+        {mode === 'stop' && (
+          <div className="space-y-2">
             <PlacesAutocomplete
-              placeholder={isPickup
-                ? (lang === 'ar' ? 'ابحث عن موقع الركوب...' : 'Search pickup location...')
-                : (lang === 'ar' ? 'ابحث عن موقع النزول...' : 'Search dropoff location...')}
-              onSelect={(place) => {
-                setMapClickTarget(type);
-                validateCustomPoint({ lat: place.lat, lng: place.lng, name: place.name }, type);
-              }}
-              iconColor={isPickup ? 'text-green-500' : 'text-destructive'}
+              placeholder={isPickupType ? (lang === 'ar' ? 'ابحث عن موقعك...' : 'Search your location...') : (lang === 'ar' ? 'ابحث عن وجهتك...' : 'Search your destination...')}
+              onSelect={(place) => handleSearchAndMatchStop(place, type)}
+              iconColor={isPickupType ? 'text-green-500' : 'text-destructive'}
             />
-
-            {validating && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                {lang === 'ar' ? 'جاري التحقق...' : 'Checking...'}
-              </div>
-            )}
-
-            {customPoint && result && (
-              <div className="space-y-2">
-                <div className={`flex items-center gap-2 text-sm p-3 rounded-lg ${
-                  result.ok ? 'bg-green-50 text-green-700' : 'bg-destructive/10 text-destructive'
-                }`}>
-                  {result.ok ? (
-                    <>
-                      <CheckCircle2 className="w-4 h-4" />
-                      <div>
-                        <p className="font-medium">{customPoint.name}</p>
-                        <p className="text-xs">
-                          {result.onRoute
-                            ? (lang === 'ar' ? 'على المسار مباشرة ✓' : 'Directly on route ✓')
-                            : (lang === 'ar' ? `+${result.minutes} دقيقة إنحراف ✓` : `+${result.minutes} min deviation ✓`)}
-                        </p>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <XCircle className="w-4 h-4" />
-                      <div>
-                        <p className="font-medium">{lang === 'ar' ? 'موقع بعيد جداً' : 'Too far from route'}</p>
-                        <p className="text-xs">
-                          {lang === 'ar' ? `+${result.minutes} دقيقة (الحد 5 دقائق)` : `+${result.minutes} min (max 5 min)`}
-                        </p>
-                      </div>
-                    </>
-                  )}
-                </div>
-                {result.ok && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full gap-2"
-                    onClick={() => {
-                      window.open(`https://www.google.com/maps/dir/?api=1&destination=${customPoint.lat},${customPoint.lng}&travelmode=driving`, '_blank');
-                    }}
-                  >
-                    <Navigation className="w-4 h-4" />
-                    {lang === 'ar' ? 'فتح في خرائط جوجل' : 'Open in Google Maps'}
-                  </Button>
-                )}
+            <div className="space-y-1 max-h-40 overflow-y-auto">
+              {filteredStops.map((stop: any) => (
+                <button
+                  key={stop.id}
+                  onClick={() => {
+                    if (isPickupType) setSelectedPickupStop(stop);
+                    else setSelectedDropoffStop(stop);
+                  }}
+                  className={`w-full text-start px-3 py-2 rounded-lg text-xs border transition-colors flex items-center gap-2 ${
+                    selectedStop?.id === stop.id
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-card text-foreground border-border hover:border-primary/50'
+                  }`}
+                >
+                  <MapPin className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{lang === 'ar' ? stop.name_ar : stop.name_en}</span>
+                </button>
+              ))}
+            </div>
+            {selectedStop && (
+              <div className="flex items-center gap-2 text-xs p-2 rounded-lg bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400">
+                <CheckCircle2 className="w-3 h-3" />
+                <span className="font-medium">{lang === 'ar' ? selectedStop.name_ar : selectedStop.name_en} ✓</span>
               </div>
             )}
           </div>
@@ -1036,30 +826,16 @@ const BookRide = () => {
                 </span>
               </div>
               <div className="h-[280px]">
-                {isNearbyMode ? (
-                  <MapPinPicker
-                    className="h-full"
-                    activePin={mapClickTarget === 'pickup' && pickupMode === 'nearby' ? 'origin' : mapClickTarget === 'dropoff' && dropoffMode === 'nearby' ? 'destination' : null}
-                    origin={selectedRide.routes ? { lat: (customPickup?.lat ?? selectedRide.routes.origin_lat), lng: (customPickup?.lng ?? selectedRide.routes.origin_lng), name: customPickup?.name ?? (lang === 'ar' ? selectedRide.routes.origin_name_ar : selectedRide.routes.origin_name_en) } : undefined}
-                    destination={selectedRide.routes ? { lat: (customDropoff?.lat ?? selectedRide.routes.destination_lat), lng: (customDropoff?.lng ?? selectedRide.routes.destination_lng), name: customDropoff?.name ?? (lang === 'ar' ? selectedRide.routes.destination_name_ar : selectedRide.routes.destination_name_en) } : undefined}
-                    onConfirm={(pinType, loc) => handleMapPinConfirm(pinType === 'origin' ? 'pickup' : 'dropoff', loc)}
-                    onCancel={() => {
-                      if (mapClickTarget === 'pickup') setPickupMode('start');
-                      else setDropoffMode('end');
-                    }}
-                  />
-                ) : (
-                  <MapView
-                    className="h-full"
-                    markers={mapMarkers}
-                    origin={selectedRide.routes ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng } : undefined}
-                    destination={selectedRide.routes ? { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng } : undefined}
-                    waypoints={routeStops.map((s: any) => ({ lat: s.lat, lng: s.lng }))}
-                    showDirections={!!selectedRide.routes}
-                    zoom={12}
-                    showUserLocation={false}
-                  />
-                )}
+                <MapView
+                  className="h-full"
+                  markers={mapMarkers}
+                  origin={selectedRide.routes ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng } : undefined}
+                  destination={selectedRide.routes ? { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng } : undefined}
+                  waypoints={routeStops.map((s: any) => ({ lat: s.lat, lng: s.lng }))}
+                  showDirections={!!selectedRide.routes}
+                  zoom={12}
+                  showUserLocation={false}
+                />
               </div>
             </div>
 
@@ -1096,14 +872,14 @@ const BookRide = () => {
             )}
 
             {/* Pickup */}
-            {renderPointSelector('pickup', pickupMode, setPickupMode, customPickup, validatingPickup, pickupResult)}
+            {renderStopSelector('pickup')}
 
             {/* Dropoff */}
             <div ref={dropoffRef}>
-            {renderPointSelector('dropoff', dropoffMode, setDropoffMode, customDropoff, validatingDropoff, dropoffResult)}
+              {renderStopSelector('dropoff')}
             </div>
 
-            {/* Trip Direction - only show based on ride direction */}
+            {/* Trip Direction */}
             <div className="bg-card border border-border rounded-2xl p-5 space-y-3">
               <h3 className="font-semibold text-foreground flex items-center gap-2">
                 <ArrowRight className="w-4 h-4 text-primary" />
@@ -1241,7 +1017,7 @@ const BookRide = () => {
               </div>
             )}
 
-            {/* InstaPay Payment — hidden when using bundle */}
+            {/* InstaPay Payment */}
             {!useBundle && (
               <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
                 <h3 className="font-semibold text-foreground flex items-center gap-2">
@@ -1264,13 +1040,7 @@ const BookRide = () => {
                   <p className="text-xs">{lang === 'ar' ? 'سيتم مراجعة الدفع من قبل المسؤول' : 'Payment will be reviewed by admin'}</p>
                 </div>
 
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handlePaymentFile}
-                />
+                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePaymentFile} />
 
                 {paymentPreview ? (
                   <div className="space-y-2">
