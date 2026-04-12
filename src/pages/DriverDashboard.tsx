@@ -1436,22 +1436,49 @@ const DriverDashboard = () => {
                             </p>
                           </div>
                         )}
-                        {validWaypoints.length > 0 && (
-                          <MapView
-                            className="h-56 rounded-xl overflow-hidden"
-                            markers={[
-                              { lat: routeOrigin.lat, lng: routeOrigin.lng, label: 'A', color: 'green' as const },
-                              ...validWaypoints.map((wp, i) => ({ lat: wp.coords.lat, lng: wp.coords.lng, label: `${i + 1}`, color: (wp.type === 'pickup' ? 'green' : 'red') as 'green' | 'red' })),
-                              { lat: routeDestination.lat, lng: routeDestination.lng, label: 'B', color: 'red' as const },
-                            ]}
-                            origin={routeOrigin}
-                            destination={routeDestination}
-                            waypoints={validWaypoints.map(wp => ({ lat: wp.coords.lat, lng: wp.coords.lng }))}
-                            showDirections={true}
-                            showUserLocation={false}
-                            zoom={11}
-                          />
-                        )}
+                        {/* Route map with stops - always show */}
+                        {routeObj?.origin_lat && routeObj?.destination_lat && (() => {
+                          const routeStops = allRoutes.find((r: any) => r.id === routeObj?.id || r.id === key.split('__')[1])?.stops || [];
+                          const sortedStops = [...routeStops].sort((a: any, b: any) => a.stop_order - b.stop_order);
+                          return (
+                            <div className="space-y-2">
+                              <MapView
+                                className="h-56 rounded-xl overflow-hidden"
+                                markers={[
+                                  { lat: routeOrigin.lat, lng: routeOrigin.lng, label: 'A', color: 'green' as const },
+                                  ...sortedStops.map((s: any, i: number) => ({ lat: s.lat, lng: s.lng, label: `${i + 1}`, color: 'blue' as const })),
+                                  { lat: routeDestination.lat, lng: routeDestination.lng, label: 'B', color: 'red' as const },
+                                ]}
+                                origin={routeOrigin}
+                                destination={routeDestination}
+                                waypoints={sortedStops.map((s: any) => ({ lat: s.lat, lng: s.lng }))}
+                                showDirections={true}
+                                showUserLocation={false}
+                                zoom={10}
+                              />
+                              {/* Stop list */}
+                              {sortedStops.length > 0 && (
+                                <div className="bg-muted/30 rounded-xl p-3 space-y-1.5">
+                                  <p className="text-xs font-medium text-muted-foreground mb-1">{lang === 'ar' ? 'المحطات' : 'Stops'}</p>
+                                  <div className="flex items-center gap-2 text-xs">
+                                    <div className="w-5 h-5 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-[10px] font-bold shrink-0">A</div>
+                                    <span className="text-foreground">{lang === 'ar' ? routeObj?.origin_name_ar : routeObj?.origin_name_en}</span>
+                                  </div>
+                                  {sortedStops.map((s: any, i: number) => (
+                                    <div key={s.id} className="flex items-center gap-2 text-xs">
+                                      <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold shrink-0">{i + 1}</div>
+                                      <span className="text-foreground">{lang === 'ar' ? s.name_ar : s.name_en}</span>
+                                    </div>
+                                  ))}
+                                  <div className="flex items-center gap-2 text-xs">
+                                    <div className="w-5 h-5 rounded-full bg-destructive/10 text-destructive flex items-center justify-center text-[10px] font-bold shrink-0">B</div>
+                                    <span className="text-foreground">{lang === 'ar' ? routeObj?.destination_name_ar : routeObj?.destination_name_en}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                         <div className="space-y-2">
                           {activeBookings.map((b: any) => {
                             const passenger = passengerProfiles[b.user_id];
