@@ -30,6 +30,7 @@ const RequestRoute = () => {
     passedState.destination || { name: '', lat: 0, lng: 0 }
   );
   const [preferredTime, setPreferredTime] = useState('');
+  const [preferredDays, setPreferredDays] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
 
   const dayLabels = lang === 'ar'
