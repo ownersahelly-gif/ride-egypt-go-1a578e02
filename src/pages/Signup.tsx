@@ -142,9 +142,12 @@ const CompanySignup = ({ lang, t, appName, signUp, navigate, toast, referralCode
           notes: `Clients: ${numClients}, Drivers: ${numDrivers}, Routes: ${numRoutes}`,
         });
 
+        // Set English as default for partners
+        localStorage.setItem('massar_lang', 'en');
+
         toast({
-          title: lang === 'ar' ? 'تم إنشاء حسابك!' : 'Account Created!',
-          description: lang === 'ar' ? 'سيتم مراجعة طلب الشراكة' : 'Your partner application is under review',
+          title: 'Account Created!',
+          description: 'Your partner application is under review',
         });
         navigate('/partner');
       } else {
