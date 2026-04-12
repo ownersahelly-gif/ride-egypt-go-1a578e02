@@ -336,7 +336,7 @@ const PartnerDashboard = () => {
     <div className="h-[100dvh] bg-background flex flex-col overflow-hidden">
       <PartnerHeader
         title={lang === 'ar' ? 'لوحة الشريك' : 'Partner Dashboard'}
-        subtitle={`${partner.name} — ${lang === 'ar' ? `عمولتك: ${partnerCommissionDisplay}% من أرباح الرحلة` : `Shown cut: ${partnerCommissionDisplay}% of the platform’s ${platformCutPercent}% commission`}`}
+        subtitle={`${partner.name} — ${lang === 'ar' ? `عمولتك: ${partnerCommissionDisplay}% من أرباح الرحلة` : `Commission: ${partnerCommissionDisplay}% of ride profit`}`}
       />
 
       <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
