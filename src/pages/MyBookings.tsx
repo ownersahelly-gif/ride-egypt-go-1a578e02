@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { MapPin, Clock, Ticket, ChevronLeft, ChevronRight, MessageCircle, Navigation, Key, Star, Phone, Users, Timer, AlertCircle } from 'lucide-react';
+import { MapPin, Clock, Ticket, ChevronLeft, ChevronRight, MessageCircle, Navigation, Key, Star, Phone, Users, Timer, AlertCircle, Receipt, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import RideChat from '@/components/RideChat';
 import RideRating from '@/components/RideRating';
@@ -34,6 +34,9 @@ const MyBookings = () => {
   const [ratedBookingIds, setRatedBookingIds] = useState<Set<string>>(new Set());
   const [unreadBookings, setUnreadBookings] = useState<Set<string>>(new Set());
   const [driverProfiles, setDriverProfiles] = useState<Record<string, any>>({});
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
+  const [receiptBooking, setReceiptBooking] = useState<any>(null);
   // All bookings on same shuttle+date for ETA calculation
   const [peerBookings, setPeerBookings] = useState<Record<string, any[]>>({});
 
@@ -101,10 +104,13 @@ const MyBookings = () => {
   }, [user]);
 
   const cancelBooking = async (id: string) => {
+    setCancellingId(id);
     const { error } = await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', id);
-    if (error) { toast({ title: t('auth.error'), description: error.message, variant: 'destructive' }); return; }
+    if (error) { toast({ title: t('auth.error'), description: error.message, variant: 'destructive' }); setCancellingId(null); return; }
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'cancelled' } : b));
     toast({ title: t('booking.cancelled') });
+    setCancellingId(null);
+    setConfirmCancelId(null);
   };
 
   /** Calculate simple ETA for a booking */
@@ -369,7 +375,16 @@ const MyBookings = () => {
                         </Link>
                       )}
                       {booking.status === 'pending' && (
-                        <Button variant="destructive" size="sm" onClick={() => cancelBooking(booking.id)}>{t('booking.cancel')}</Button>
+                        <Button variant="destructive" size="sm" onClick={() => setConfirmCancelId(booking.id)}
+                          disabled={cancellingId === booking.id}>
+                          {cancellingId === booking.id ? (lang === 'ar' ? 'جاري...' : 'Cancelling...') : t('booking.cancel')}
+                        </Button>
+                      )}
+                      {booking.status === 'completed' && (
+                        <Button variant="outline" size="sm" onClick={() => setReceiptBooking(booking)}>
+                          <Receipt className="w-3.5 h-3.5 me-1" />
+                          {lang === 'ar' ? 'إيصال' : 'Receipt'}
+                        </Button>
                       )}
                     </div>
                   </div>
@@ -400,6 +415,101 @@ const MyBookings = () => {
           onClose={() => setRatingBooking(null)}
           onRated={() => setRatedBookingIds(prev => new Set([...prev, ratingBooking.id]))}
         />
+      )}
+
+      {/* Cancel Confirmation Dialog */}
+      {confirmCancelId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-card border border-border rounded-2xl p-6 w-[90%] max-w-sm shadow-xl space-y-4">
+            <div className="text-center">
+              <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-2" />
+              <h3 className="text-lg font-bold text-foreground">
+                {lang === 'ar' ? 'إلغاء الحجز؟' : 'Cancel Booking?'}
+              </h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                {lang === 'ar' ? 'هل أنت متأكد؟ لا يمكن التراجع عن هذا الإجراء.' : 'Are you sure? This action cannot be undone.'}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setConfirmCancelId(null)}>
+                {lang === 'ar' ? 'لا، ارجع' : 'No, Go Back'}
+              </Button>
+              <Button variant="destructive" className="flex-1" onClick={() => cancelBooking(confirmCancelId)}
+                disabled={cancellingId === confirmCancelId}>
+                {cancellingId === confirmCancelId ? (lang === 'ar' ? 'جاري...' : 'Cancelling...') : (lang === 'ar' ? 'نعم، إلغاء' : 'Yes, Cancel')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ride Receipt Modal */}
+      {receiptBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-card border border-border rounded-2xl p-6 w-[90%] max-w-sm shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-primary" />
+                {lang === 'ar' ? 'إيصال الرحلة' : 'Ride Receipt'}
+              </h3>
+              <Button variant="ghost" size="icon" onClick={() => setReceiptBooking(null)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{lang === 'ar' ? 'المسار' : 'Route'}</span>
+                <span className="font-medium text-foreground">{lang === 'ar' ? receiptBooking.routes?.name_ar : receiptBooking.routes?.name_en}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{lang === 'ar' ? 'التاريخ' : 'Date'}</span>
+                <span className="font-medium text-foreground">{receiptBooking.scheduled_date}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{lang === 'ar' ? 'الوقت' : 'Time'}</span>
+                <span className="font-medium text-foreground">{receiptBooking.scheduled_time}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{lang === 'ar' ? 'المقاعد' : 'Seats'}</span>
+                <span className="font-medium text-foreground">{receiptBooking.seats}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{lang === 'ar' ? 'نوع الرحلة' : 'Trip Type'}</span>
+                <span className="font-medium text-foreground">
+                  {receiptBooking.trip_direction === 'both' ? (lang === 'ar' ? 'ذهاب وعودة' : 'Round Trip') : receiptBooking.trip_direction === 'go' ? (lang === 'ar' ? 'ذهاب' : 'Going') : (lang === 'ar' ? 'عودة' : 'Return')}
+                </span>
+              </div>
+              {receiptBooking.boarded_at && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{lang === 'ar' ? 'وقت الصعود' : 'Boarded At'}</span>
+                  <span className="font-medium text-foreground">{new Date(receiptBooking.boarded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+              )}
+              {receiptBooking.dropped_off_at && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{lang === 'ar' ? 'وقت النزول' : 'Dropped Off'}</span>
+                  <span className="font-medium text-foreground">{new Date(receiptBooking.dropped_off_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+              )}
+              {receiptBooking.boarded_at && receiptBooking.dropped_off_at && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{lang === 'ar' ? 'المدة' : 'Duration'}</span>
+                  <span className="font-medium text-foreground">
+                    {Math.round((new Date(receiptBooking.dropped_off_at).getTime() - new Date(receiptBooking.boarded_at).getTime()) / 60000)} {lang === 'ar' ? 'دقيقة' : 'min'}
+                  </span>
+                </div>
+              )}
+              <div className="border-t border-border pt-3 flex justify-between">
+                <span className="font-semibold text-foreground">{lang === 'ar' ? 'الإجمالي' : 'Total'}</span>
+                <span className="text-lg font-bold text-primary">{receiptBooking.total_price} EGP</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">{lang === 'ar' ? 'طريقة الدفع' : 'Payment'}</span>
+                <span className="text-foreground">{receiptBooking.payment_proof_url ? 'InstaPay' : (lang === 'ar' ? 'كاش' : 'Cash')}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
       
       <BottomNav />
