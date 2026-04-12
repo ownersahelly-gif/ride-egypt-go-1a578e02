@@ -220,6 +220,21 @@ const DriverDashboard = () => {
 
   const saveSchedule = async () => {
     if (!user || !shuttle || !scheduleForm.route_id || scheduleForm.days.length === 0 || scheduleForm.timeSlots.length === 0) return;
+    
+    // Check for duplicate day+time combos that already exist
+    const existingForRoute = driverSchedules.filter(s => s.route_id === scheduleForm.route_id);
+    const duplicates: string[] = [];
+    for (const day of scheduleForm.days) {
+      for (const slot of scheduleForm.timeSlots) {
+        const exists = existingForRoute.find(s => s.day_of_week === day && s.departure_time?.slice(0, 5) === slot.time);
+        if (exists) duplicates.push(`${dayNames[day]} ${slot.time}`);
+      }
+    }
+    if (duplicates.length > 0 && duplicates.length === scheduleForm.days.length * scheduleForm.timeSlots.length) {
+      toast({ title: lang === 'ar' ? 'هذا الجدول موجود بالفعل' : 'Schedule already exists', description: duplicates.join(', '), variant: 'destructive' });
+      return;
+    }
+    
     setSavingSchedule(true);
     // Create one schedule entry per day per time slot
     const goSlots = scheduleForm.timeSlots.filter(s => s.direction === 'go');
@@ -649,72 +664,6 @@ const DriverDashboard = () => {
                         {lang === 'ar' ? 'الرحلات القادمة' : 'Upcoming Trips'}
                       </h3>
 
-                      <div className="bg-card border border-primary/20 rounded-2xl p-4 space-y-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-foreground">
-                              {lang === 'ar' ? 'إدارة رحلات اليوم' : 'Manage today\'s trips'}
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {lang === 'ar'
-                                ? 'من هنا تضيف رحلة جديدة بسرعة، أو تفتح أي رحلة، أو تحذفها من زر الحذف على اليمين.'
-                                : 'Use this area to quickly add a trip, open a trip, or remove it with the delete button on the right.'}
-                            </p>
-                          </div>
-                          <Button variant="outline" size="sm" onClick={() => setTab('schedule')}>
-                            <Calendar className="w-4 h-4 me-1" />
-                            {lang === 'ar' ? 'الجدول الكامل' : 'Full schedule'}
-                          </Button>
-                        </div>
-
-                        {quickAddDay ? (
-                          <div className="bg-background border border-border rounded-2xl p-4 space-y-3">
-                            <p className="text-sm font-medium text-foreground">{lang === 'ar' ? 'إضافة رحلة جديدة' : 'Add new trip'}</p>
-                            <div className="flex flex-wrap gap-2">
-                              {dayNames.map((name, i) => (
-                                <button
-                                  key={i}
-                                  onClick={() => setQuickAddDay(prev => prev ? { ...prev, day: i } : null)}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                                    quickAddDay?.day === i ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-muted-foreground border-border'
-                                  }`}
-                                >
-                                  {name}
-                                </button>
-                              ))}
-                            </div>
-                            <div className="flex flex-col sm:flex-row items-stretch gap-2">
-                              <select
-                                value={quickAddDir}
-                                onChange={e => setQuickAddDir(e.target.value as 'go' | 'return')}
-                                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                              >
-                                <option value="go">{lang === 'ar' ? '→ ذهاب' : '→ Going'}</option>
-                                <option value="return">{lang === 'ar' ? '← عودة' : '← Returning'}</option>
-                              </select>
-                              <Input type="time" value={quickAddTime} onChange={e => setQuickAddTime(e.target.value)} className="flex-1 h-10" />
-                            </div>
-                            <div className="flex flex-col sm:flex-row gap-2">
-                              <Button className="flex-1" onClick={quickAddTimeSlot} disabled={savingQuickAdd}>
-                                {savingQuickAdd ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4 me-1" />}
-                                {lang === 'ar' ? 'إضافة الرحلة الآن' : 'Add trip now'}
-                              </Button>
-                              <Button variant="outline" className="flex-1" onClick={() => setQuickAddDay(null)}>
-                                {lang === 'ar' ? 'إلغاء' : 'Cancel'}
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <Button
-                            className="w-full h-11"
-                            onClick={() => routeIds.length > 0 ? setQuickAddDay({ routeId: routeIds[0], day: todayDow, shuttleId: shuttle.id }) : setTab('schedule')}
-                          >
-                            <Plus className="w-4 h-4 me-1" />
-                            {lang === 'ar' ? 'إضافة توقيت جديد لليوم' : 'Add a new time for today'}
-                          </Button>
-                        )}
-                      </div>
-
                       {displaySlots.map((slot) => {
                         const key = `${slot.scheduleId}_${slot.direction}`;
                         const isExpanded = expandedUpcoming === key;
@@ -1011,11 +960,12 @@ const DriverDashboard = () => {
 
                 {/* Prompt if no schedule */}
                 {driverSchedules.length === 0 && (
-                  <div className="bg-primary/5 border border-primary/20 rounded-2xl p-5">
-                    <h3 className="font-semibold text-foreground mb-1">{lang === 'ar' ? 'ابدأ بتحديد مسارك!' : 'Set up your route!'}</h3>
-                    <p className="text-sm text-muted-foreground mb-3">{lang === 'ar' ? 'اختر مسار وحدد أيام عملك لبدء استقبال الركاب' : 'Pick a route and set your work days to start receiving riders'}</p>
-                    <Button onClick={() => setTab('schedule')}>
-                      <Calendar className="w-4 h-4 me-1" />{lang === 'ar' ? 'إعداد الجدول' : 'Set Schedule'}
+                  <div className="bg-primary/5 border border-primary/20 rounded-2xl p-6 text-center">
+                    <Route className="w-10 h-10 text-primary mx-auto mb-3" />
+                    <h3 className="font-semibold text-foreground mb-1">{lang === 'ar' ? 'هل تريد تأمين أول مسار لك؟' : 'Want to secure your first route?'}</h3>
+                    <p className="text-sm text-muted-foreground mb-4">{lang === 'ar' ? 'اضغط هنا للذهاب إلى صفحة الجدول واختيار مسارك' : 'Press here to go to the schedule page and choose your route'}</p>
+                    <Button onClick={() => setTab('schedule')} className="h-11">
+                      <Calendar className="w-4 h-4 me-2" />{lang === 'ar' ? 'الذهاب للجدول' : 'Go to Schedule'}
                     </Button>
                   </div>
                 )}
@@ -1252,16 +1202,31 @@ const DriverDashboard = () => {
                             />
                           );
                         })()}
+                        {/* Show existing schedule info if already scheduled */}
+                        {isScheduled && (() => {
+                          const existingSchedules = driverSchedules.filter(s => s.route_id === r.id);
+                          return (
+                            <div className="bg-primary/5 border border-primary/10 rounded-xl p-3 mb-2 space-y-1">
+                              <p className="text-xs font-medium text-primary">{lang === 'ar' ? 'مُجدول بالفعل:' : 'Already scheduled:'}</p>
+                              {existingSchedules.map(s => (
+                                <p key={s.id} className="text-xs text-muted-foreground">
+                                  {dayNames[s.day_of_week]} — {formatTime12h(s.departure_time, lang)}
+                                  {s.return_time ? ` + ${formatTime12h(s.return_time, lang)}` : ''}
+                                </p>
+                              ))}
+                              <p className="text-[10px] text-muted-foreground mt-1">{lang === 'ar' ? 'يمكنك إضافة أيام أو أوقات أخرى' : 'You can add more days or times'}</p>
+                            </div>
+                          );
+                        })()}
                         <div className="flex items-center justify-between">
                           <p className="text-xs text-green-600">
                             <TrendingUp className="w-3 h-3 inline me-1" />
                             ~{earnings.perTrip.toFixed(0)} EGP/{lang === 'ar' ? 'رحلة' : 'trip'}
                           </p>
-                          {!isScheduled && (
-                            <Button size="sm" onClick={() => openScheduleForRoute(r)}>
-                              <Calendar className="w-3.5 h-3.5 me-1" />{lang === 'ar' ? 'اختيار' : 'Choose'}
-                            </Button>
-                          )}
+                          <Button size="sm" onClick={() => openScheduleForRoute(r)}>
+                            <Calendar className="w-3.5 h-3.5 me-1" />
+                            {isScheduled ? (lang === 'ar' ? 'إضافة مواعيد' : 'Add Times') : (lang === 'ar' ? 'اختيار' : 'Choose')}
+                          </Button>
                         </div>
                       </div>
                     );
@@ -1302,35 +1267,37 @@ const DriverDashboard = () => {
                 grouped[key].bookings.push(b);
               });
 
-              // Add only the NEXT upcoming occurrence from each schedule (not 4 weeks)
+              // Add ALL upcoming occurrences from schedules (4 weeks if recurring)
               const now = new Date();
               const todayDow = now.getDay();
               const todayStr = now.toISOString().split('T')[0];
               const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
               
               for (const s of driverSchedules) {
-                let offset = s.day_of_week - todayDow;
-                if (offset < 0) offset += 7;
-                // If today but time passed, go to next week
-                if (offset === 0 && s.departure_time?.slice(0, 5) < currentTime) offset = 7;
-                const nextDate = new Date(now);
-                nextDate.setDate(now.getDate() + offset);
-                const dateStr = nextDate.toISOString().split('T')[0];
-                
-                if (s.departure_time) {
-                  const key = `${dateStr}__${s.route_id}__${s.departure_time}`;
-                  if (!grouped[key]) grouped[key] = { bookings: [], routeInfo: s.routes, date: dateStr, time: s.departure_time };
-                }
-                if (s.return_time) {
-                  // Check return time separately for today
-                  let retOffset = s.day_of_week - todayDow;
-                  if (retOffset < 0) retOffset += 7;
-                  if (retOffset === 0 && s.return_time?.slice(0, 5) < currentTime) retOffset = 7;
-                  const retDate = new Date(now);
-                  retDate.setDate(now.getDate() + retOffset);
-                  const retDateStr = retDate.toISOString().split('T')[0];
-                  const key = `${retDateStr}__${s.route_id}__${s.return_time}`;
-                  if (!grouped[key]) grouped[key] = { bookings: [], routeInfo: s.routes, date: retDateStr, time: s.return_time };
+                const weeksAhead = s.is_recurring ? 4 : 1;
+                for (let w = 0; w < weeksAhead; w++) {
+                  let offset = s.day_of_week - todayDow + (w * 7);
+                  if (offset < 0) offset += 7;
+                  // If today but time passed for this week, skip this occurrence
+                  const isThisWeekToday = w === 0 && (s.day_of_week === todayDow);
+                  
+                  if (s.departure_time) {
+                    let depOffset = offset;
+                    if (isThisWeekToday && s.departure_time?.slice(0, 5) < currentTime) continue; // skip past today occurrence, will appear in next week
+                    const nextDate = new Date(now);
+                    nextDate.setDate(now.getDate() + depOffset);
+                    const dateStr = nextDate.toISOString().split('T')[0];
+                    const key = `${dateStr}__${s.route_id}__${s.departure_time}`;
+                    if (!grouped[key]) grouped[key] = { bookings: [], routeInfo: s.routes, date: dateStr, time: s.departure_time };
+                  }
+                  if (s.return_time) {
+                    if (isThisWeekToday && s.return_time?.slice(0, 5) < currentTime) continue;
+                    const retDate = new Date(now);
+                    retDate.setDate(now.getDate() + offset);
+                    const retDateStr = retDate.toISOString().split('T')[0];
+                    const key = `${retDateStr}__${s.route_id}__${s.return_time}`;
+                    if (!grouped[key]) grouped[key] = { bookings: [], routeInfo: s.routes, date: retDateStr, time: s.return_time };
+                  }
                 }
               }
 
