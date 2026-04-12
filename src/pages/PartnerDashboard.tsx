@@ -142,9 +142,9 @@ const PartnerDashboard = () => {
   };
   const handleSignOut = async () => { await signOut(); navigate('/'); };
 
-  const PartnerHeader = ({ title }: { title: string }) => (
+  const PartnerHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
     <div className="bg-primary text-primary-foreground px-4 pt-12 pb-8">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-2">
         <h1 className="text-xl font-bold">{title}</h1>
         <div className="flex items-center gap-2">
           <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="p-2 rounded-full bg-primary-foreground/10">
@@ -158,6 +158,8 @@ const PartnerDashboard = () => {
           </button>
         </div>
       </div>
+      {subtitle && <p className="text-sm opacity-80">{subtitle}</p>}
+    </div>
   );
 
   const pendingEarnings = earnings.filter(e => e.status === 'pending').reduce((s, e) => s + Number(e.amount), 0);
@@ -225,9 +227,8 @@ const PartnerDashboard = () => {
             </div>
           )}
         </div>
-
       </div>
-      </div>
+    );
     );
   }
 
@@ -241,7 +242,6 @@ const PartnerDashboard = () => {
           <h2 className="text-xl font-bold text-foreground mb-2">{lang === 'ar' ? 'طلبك قيد المراجعة' : 'Application Under Review'}</h2>
           <p className="text-muted-foreground">{lang === 'ar' ? 'سنراجع طلبك ونتواصل معك قريبًا' : 'We\'ll review your application and get back to you soon.'}</p>
         </div>
-      </div>
       </div>
     );
   }
