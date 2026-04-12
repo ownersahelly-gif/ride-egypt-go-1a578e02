@@ -208,14 +208,16 @@ const AdminPanel = () => {
     }
 
     // Fetch partner data
-    const [{ data: partners }, { data: pEarnings }, { data: pRouteReqs }] = await Promise.all([
+    const [{ data: partners }, { data: pEarnings }, { data: pRouteReqs }, { data: pPkgReqs }] = await Promise.all([
       supabase.from('partner_companies').select('*').order('created_at', { ascending: false }),
       supabase.from('platform_earnings').select('*').order('created_at', { ascending: false }).limit(200),
       supabase.from('partner_route_requests').select('*').order('created_at', { ascending: false }),
+      supabase.from('partner_package_requests').select('*').order('created_at', { ascending: false }),
     ]);
     setPartnerCompanies(partners || []);
     setPlatformEarnings(pEarnings || []);
     setPartnerRouteRequests(pRouteReqs || []);
+    setPartnerPackageRequests(pPkgReqs || []);
     // Fetch profiles for partners
     const partnerUserIds = [...new Set((partners || []).map((p: any) => p.user_id))];
     if (partnerUserIds.length > 0) {
