@@ -19,18 +19,34 @@ const DriverProfile = () => {
   useEffect(() => {
     if (!id) return;
     const fetchDriver = async () => {
-      const [{ data: profileData }, { data: shuttleData }, { data: ratingsData }, { data: completedBookings }] = await Promise.all([
+      // Get shuttle IDs first
+      const { data: shuttlesData } = await supabase.from('shuttles').select('id').eq('driver_id', id);
+      const shuttleIds = (shuttlesData || []).map(s => s.id);
+
+      const [{ data: profileData }, { data: shuttleData }, { data: ratingsData }] = await Promise.all([
         supabase.from('profiles').select('*').eq('user_id', id).single(),
         supabase.from('shuttles').select('*').eq('driver_id', id).limit(1).maybeSingle(),
-        supabase.from('ratings').select('*, profiles!ratings_user_id_fkey1(full_name)').eq('driver_id', id).order('created_at', { ascending: false }),
-        supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('status', 'completed').in('shuttle_id',
-          (await supabase.from('shuttles').select('id').eq('driver_id', id)).data?.map(s => s.id) || []
-        ),
+        supabase.from('ratings').select('*').eq('driver_id', id).order('created_at', { ascending: false }),
       ]);
+
+      let completedCount = 0;
+      if (shuttleIds.length > 0) {
+        const { count } = await supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('status', 'completed').in('shuttle_id', shuttleIds);
+        completedCount = count || 0;
+      }
+
+      // Fetch reviewer names
+      const reviewerIds = [...new Set((ratingsData || []).map(r => r.user_id))];
+      let reviewerMap: Record<string, string> = {};
+      if (reviewerIds.length > 0) {
+        const { data: reviewers } = await supabase.from('profiles').select('user_id, full_name').in('user_id', reviewerIds);
+        (reviewers || []).forEach(r => { reviewerMap[r.user_id] = r.full_name || ''; });
+      }
+
       setProfile(profileData);
       setShuttle(shuttleData);
-      setRatings(ratingsData || []);
-      setRideCount(completedBookings || 0);
+      setRatings((ratingsData || []).map(r => ({ ...r, reviewer_name: reviewerMap[r.user_id] })));
+      setRideCount(completedCount);
       setLoading(false);
     };
     fetchDriver();
