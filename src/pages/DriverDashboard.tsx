@@ -434,6 +434,7 @@ const DriverDashboard = () => {
     { key: 'home', icon: Car, label: lang === 'ar' ? 'الرئيسية' : 'Home' },
     { key: 'schedule', icon: Calendar, label: lang === 'ar' ? 'الجدول' : 'Schedule' },
     { key: 'trips', icon: Navigation, label: lang === 'ar' ? 'الرحلات' : 'Trips' },
+    { key: 'earnings', icon: DollarSign, label: lang === 'ar' ? 'الأرباح' : 'Earnings' },
   ];
 
   if (loading) return <div className="h-screen flex items-center justify-center overflow-hidden"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
