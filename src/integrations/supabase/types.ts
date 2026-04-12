@@ -859,6 +859,7 @@ export type Database = {
           accepted_terms_at: string | null
           avatar_url: string | null
           created_at: string
+          driver_balance: number
           full_name: string | null
           id: string
           phone: string | null
@@ -872,6 +873,7 @@ export type Database = {
           accepted_terms_at?: string | null
           avatar_url?: string | null
           created_at?: string
+          driver_balance?: number
           full_name?: string | null
           id?: string
           phone?: string | null
@@ -885,6 +887,7 @@ export type Database = {
           accepted_terms_at?: string | null
           avatar_url?: string | null
           created_at?: string
+          driver_balance?: number
           full_name?: string | null
           id?: string
           phone?: string | null
