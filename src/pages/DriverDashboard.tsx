@@ -276,6 +276,7 @@ const DriverDashboard = () => {
     if (!user || !shuttle) return;
     const instances: any[] = [];
     const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
     for (const entry of scheduleEntries) {
       const weeksAhead = entry.is_recurring ? 4 : 1;
       for (let w = 0; w < weeksAhead; w++) {
@@ -284,9 +285,26 @@ const DriverDashboard = () => {
           date.setDate(today.getDate() + (w * 7) + d);
           if (date.getDay() === entry.day_of_week && date >= today) {
             const dateStr = date.toISOString().split('T')[0];
+            // Skip if the time has already passed today
+            if (dateStr === todayStr) {
+              const [hh, mm] = entry.departure_time.split(':').map(Number);
+              const depTime = new Date();
+              depTime.setHours(hh, mm, 0, 0);
+              if (Date.now() > depTime.getTime()) continue;
+            }
             instances.push({ driver_id: user.id, route_id: entry.route_id, shuttle_id: shuttle.id, ride_date: dateStr, departure_time: entry.departure_time, available_seats: shuttle.capacity, total_seats: shuttle.capacity, status: 'scheduled', direction: explicitDirection || 'go' });
             if (entry.return_time) {
-              instances.push({ driver_id: user.id, route_id: entry.route_id, shuttle_id: shuttle.id, ride_date: dateStr, departure_time: entry.return_time, available_seats: shuttle.capacity, total_seats: shuttle.capacity, status: 'scheduled', direction: 'return' });
+              // Also skip return if time passed today
+              let skipReturn = false;
+              if (dateStr === todayStr) {
+                const [rh, rm] = entry.return_time.split(':').map(Number);
+                const retTime = new Date();
+                retTime.setHours(rh, rm, 0, 0);
+                if (Date.now() > retTime.getTime()) skipReturn = true;
+              }
+              if (!skipReturn) {
+                instances.push({ driver_id: user.id, route_id: entry.route_id, shuttle_id: shuttle.id, ride_date: dateStr, departure_time: entry.return_time, available_seats: shuttle.capacity, total_seats: shuttle.capacity, status: 'scheduled', direction: 'return' });
+              }
             }
           }
         }
