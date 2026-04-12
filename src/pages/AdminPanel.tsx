@@ -1556,13 +1556,83 @@ const AdminPanel = () => {
           </div>
         )}
         {/* Users Tab */}
-        {tab === 'users' && (
+        {tab === 'users' && (() => {
+          const [userTypeFilter, setUserTypeFilter] = [
+            (window as any).__userTypeFilter || 'all',
+            (val: string) => { (window as any).__userTypeFilter = val; setAllProfiles([...allProfiles]); }
+          ];
+          const [userTimeFilter, setUserTimeFilter] = [
+            (window as any).__userTimeFilter || 'all',
+            (val: string) => { (window as any).__userTimeFilter = val; setAllProfiles([...allProfiles]); }
+          ];
+          const [userSearch, setUserSearch] = [
+            (window as any).__userSearch || '',
+            (val: string) => { (window as any).__userSearch = val; setAllProfiles([...allProfiles]); }
+          ];
+
+          const now = new Date();
+          const filteredUsers = allProfiles.filter((p: any) => {
+            // Type filter
+            if (userTypeFilter !== 'all' && p.user_type !== userTypeFilter) return false;
+            // Time filter
+            if (userTimeFilter !== 'all') {
+              const joined = new Date(p.created_at);
+              const hoursAgo = (now.getTime() - joined.getTime()) / (1000 * 60 * 60);
+              const hours = parseInt(userTimeFilter);
+              if (hoursAgo > hours) return false;
+            }
+            // Search
+            if (userSearch) {
+              const q = userSearch.toLowerCase();
+              const name = (p.full_name || '').toLowerCase();
+              const phone = (p.phone || '').toLowerCase();
+              if (!name.includes(q) && !phone.includes(q)) return false;
+            }
+            return true;
+          });
+
+          return (
           <div className="space-y-4">
             <h2 className="text-xl font-bold text-foreground">{lang === 'ar' ? 'المستخدمين المسجلين' : 'Registered Users'}</h2>
-            <p className="text-sm text-muted-foreground">{lang === 'ar' ? `${allProfiles.length} مستخدم مسجل` : `${allProfiles.length} registered users`}</p>
-            {allProfiles.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{lang === 'ar' ? `${filteredUsers.length} من ${allProfiles.length} مستخدم` : `${filteredUsers.length} of ${allProfiles.length} users`}</p>
+
+            {/* Filters */}
+            <div className="flex flex-wrap gap-3">
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="absolute start-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder={lang === 'ar' ? 'بحث بالاسم أو الهاتف...' : 'Search name or phone...'}
+                  className="ps-9"
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                />
+              </div>
+              <select
+                className="border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground"
+                value={userTypeFilter}
+                onChange={(e) => setUserTypeFilter(e.target.value)}
+              >
+                <option value="all">{lang === 'ar' ? 'الكل' : 'All Types'}</option>
+                <option value="customer">{lang === 'ar' ? 'راكب' : 'Customer'}</option>
+                <option value="driver">{lang === 'ar' ? 'سائق' : 'Driver'}</option>
+                <option value="admin">{lang === 'ar' ? 'أدمن' : 'Admin'}</option>
+              </select>
+              <select
+                className="border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground"
+                value={userTimeFilter}
+                onChange={(e) => setUserTimeFilter(e.target.value)}
+              >
+                <option value="all">{lang === 'ar' ? 'كل الأوقات' : 'All Time'}</option>
+                <option value="24">{lang === 'ar' ? 'آخر 24 ساعة' : 'Last 24 hours'}</option>
+                <option value="48">{lang === 'ar' ? 'آخر 48 ساعة' : 'Last 48 hours'}</option>
+                <option value="168">{lang === 'ar' ? 'آخر أسبوع' : 'Last 7 days'}</option>
+                <option value="720">{lang === 'ar' ? 'آخر 30 يوم' : 'Last 30 days'}</option>
+              </select>
+            </div>
+
+            {filteredUsers.length === 0 ? (
               <div className="bg-card border border-border rounded-xl p-8 text-center text-muted-foreground">
-                {lang === 'ar' ? 'لا يوجد مستخدمين بعد' : 'No users yet'}
+                {lang === 'ar' ? 'لا يوجد مستخدمين مطابقين' : 'No matching users'}
               </div>
             ) : (
               <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -1578,7 +1648,7 @@ const AdminPanel = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {allProfiles.map((p: any) => (
+                      {filteredUsers.map((p: any) => (
                         <tr key={p.id} className="border-b border-border last:border-0 hover:bg-muted/20">
                           <td className="p-3 font-medium text-foreground">{p.full_name || '—'}</td>
                           <td className="p-3 text-muted-foreground">{p.phone || '—'}</td>
@@ -1638,6 +1708,18 @@ const AdminPanel = () => {
                               }}
                             >
                               <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+          );
+        })()}
                             </Button>
                           </td>
                         </tr>
