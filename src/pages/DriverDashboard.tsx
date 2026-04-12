@@ -393,7 +393,7 @@ const DriverDashboard = () => {
       return_time: quickAddDir === 'return' ? quickAddTime : null,
       is_recurring: true, is_active: true, min_passengers: 5,
     };
-    const { error } = await supabase.from('driver_schedules').insert(entry);
+    const { error } = await supabase.from('driver_schedules').upsert(entry, { onConflict: 'driver_id,route_id,day_of_week,departure_time' });
     if (error) toast({ title: t('auth.error'), description: error.message, variant: 'destructive' });
     else {
       toast({ title: lang === 'ar' ? 'تمت إضافة الرحلة!' : 'Trip added!' });
