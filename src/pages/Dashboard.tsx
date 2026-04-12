@@ -734,7 +734,13 @@ const Dashboard = () => {
 
         {step === 'results' && (
           <div className="p-4 space-y-3">
-            <h2 className="text-lg font-bold text-foreground">{lang === 'ar' ? 'الرحلات المتاحة' : 'Available Rides'}</h2>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" className="rounded-full gap-1 shrink-0" onClick={() => { setStep('search'); setRideInstances([]); }}>
+                <Back className="w-4 h-4" />
+                <span className="text-sm">{lang === 'ar' ? 'رجوع' : 'Back'}</span>
+              </Button>
+              <h2 className="text-lg font-bold text-foreground flex-1">{lang === 'ar' ? 'الرحلات المتاحة' : 'Available Rides'}</h2>
+            </div>
             {loadingRides ? (
               <div className="p-8 text-center text-muted-foreground"><Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />{lang === 'ar' ? 'جاري البحث...' : 'Searching...'}</div>
             ) : rideInstances.length > 0 ? (
