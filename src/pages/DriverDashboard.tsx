@@ -725,7 +725,7 @@ const DriverDashboard = () => {
                         return (
                           <div key={key} className={`bg-card border rounded-2xl overflow-hidden transition-all ${
                             slot.direction === 'go' ? 'border-green-200' : 'border-blue-200'
-                          } ${slot.isPast ? 'opacity-50' : ''}`}>
+                          } ${slot.isPast && !canStart ? 'opacity-50' : ''}`}>
                             <div className="flex items-stretch">
                               <button
                                 onClick={() => setExpandedUpcoming(isExpanded ? null : key)}
