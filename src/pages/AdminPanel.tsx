@@ -14,11 +14,11 @@ import PlacesAutocomplete from '@/components/PlacesAutocomplete';
 import {
   ChevronLeft, Route, Users, Car, Ticket, BarChart3, Plus, Edit, Trash2,
   CheckCircle2, XCircle, MapPin, Clock, Search, Globe, LogOut, Shield,
-  Loader2, Eye, Database, Settings, Phone, Package, ListOrdered
+  Loader2, Eye, Database, Settings, Phone, Package, ListOrdered, RotateCcw
 } from 'lucide-react';
 import PackagePricing from '@/components/admin/PackagePricing';
 
-type AdminTab = 'routes' | 'drivers' | 'shuttles' | 'bookings' | 'analytics' | 'approvals' | 'settings' | 'carpool' | 'users' | 'route_requests' | 'packages' | 'content';
+type AdminTab = 'routes' | 'drivers' | 'shuttles' | 'bookings' | 'analytics' | 'approvals' | 'settings' | 'carpool' | 'users' | 'route_requests' | 'packages' | 'content' | 'refunds';
 
 const AdminPanel = () => {
   const { user, signOut } = useAuth();
