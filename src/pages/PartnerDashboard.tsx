@@ -140,8 +140,27 @@ const PartnerDashboard = () => {
     navigator.clipboard.writeText(link);
     toast({ title: lang === 'ar' ? 'تم نسخ الرابط!' : 'Link copied!' });
   };
+  const handleSignOut = async () => { await signOut(); navigate('/'); };
 
-  const totalEarnings = earnings.reduce((s, e) => s + Number(e.amount), 0);
+  const PartnerHeader = ({ title }: { title: string }) => (
+    <div className="bg-primary text-primary-foreground px-4 pt-12 pb-8">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-bold">{title}</h1>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="p-2 rounded-full bg-primary-foreground/10">
+            <Globe className="w-5 h-5" />
+          </button>
+          <Link to="/profile" className="p-2 rounded-full bg-primary-foreground/10">
+            <User className="w-5 h-5" />
+          </Link>
+          <button onClick={handleSignOut} className="p-2 rounded-full bg-primary-foreground/10">
+            <LogOut className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   const pendingEarnings = earnings.filter(e => e.status === 'pending').reduce((s, e) => s + Number(e.amount), 0);
 
   if (loading) {
