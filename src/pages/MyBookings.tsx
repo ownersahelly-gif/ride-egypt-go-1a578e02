@@ -384,6 +384,11 @@ const MyBookings = () => {
         bookingId={chatBookingId || ''}
         isOpen={!!chatBookingId}
         onClose={() => setChatBookingId(null)}
+        onRead={() => {
+          if (chatBookingId) {
+            setUnreadBookings(prev => { const next = new Set(prev); next.delete(chatBookingId); return next; });
+          }
+        }}
       />
 
       {ratingBooking && (

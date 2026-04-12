@@ -1307,7 +1307,7 @@ const DriverDashboard = () => {
                       </div>
                     );
                   })}
-                  <RideChat bookingId={chatBookingId || ''} otherName={chatPassengerName} isOpen={!!chatBookingId} onClose={() => setChatBookingId(null)} />
+                  <RideChat bookingId={chatBookingId || ''} otherName={chatPassengerName} isOpen={!!chatBookingId} onClose={() => setChatBookingId(null)} onRead={() => {}} />
                 </div>
               );
             })()}
