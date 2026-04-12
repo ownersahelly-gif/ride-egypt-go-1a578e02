@@ -336,7 +336,7 @@ const PartnerDashboard = () => {
     <div className="h-[100dvh] bg-background flex flex-col overflow-hidden">
       <PartnerHeader
         title={lang === 'ar' ? 'لوحة الشريك' : 'Partner Dashboard'}
-        subtitle={`${partner.name} — ${lang === 'ar' ? `حصتك المعروضة: ${partnerCommissionDisplay}% من عمولة المنصة ${platformCutPercent}%` : `Shown cut: ${partnerCommissionDisplay}% of the platform’s ${platformCutPercent}% commission`}`}
+        subtitle={`${partner.name} — ${lang === 'ar' ? `عمولتك: ${partnerCommissionDisplay}% من أرباح الرحلة` : `Shown cut: ${partnerCommissionDisplay}% of the platform’s ${platformCutPercent}% commission`}`}
       />
 
       <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
@@ -381,13 +381,13 @@ const PartnerDashboard = () => {
           <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
             <p className="text-sm text-foreground font-medium mb-1">
               {lang === 'ar'
-                ? `حصتك المعروضة ${partnerCommissionDisplay}% من عمولة المنصة ${platformCutPercent}%، أي ${effectiveTripPercent.toFixed(1)}% من سعر الرحلة`
+                ? `عمولتك ${partnerCommissionDisplay}% من أرباح الرحلة`
                 : `Your shown cut is ${partnerCommissionDisplay}% of the platform’s ${platformCutPercent}% commission, which equals ${effectiveTripPercent.toFixed(1)}% of the trip price`}
             </p>
             <p className="text-xs text-muted-foreground">
               {lang === 'ar'
                 ? 'يتم احتساب عمولتك تلقائياً عند إكمال عملائك المُحالين لأي رحلة'
-                : 'Your commission is automatically calculated when your referred clients complete rides'}
+                : 'Automatically calculated when your referred clients complete rides'}
             </p>
           </div>
 
