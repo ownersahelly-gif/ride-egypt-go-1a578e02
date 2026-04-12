@@ -670,7 +670,23 @@ const Signup = () => {
                 />
               )}
 
-              <Button type="button" className="w-full gap-2" size="lg" disabled={loading} onClick={handleDriverSubmit}>
+              {/* Terms acceptance for drivers */}
+              <div className="flex items-start gap-3 pt-2 border-t border-border">
+                <input
+                  type="checkbox"
+                  id="acceptTermsDriver"
+                  checked={acceptedTerms}
+                  onChange={(e) => setAcceptedTerms(e.target.checked)}
+                  className="w-5 h-5 rounded border-border text-primary focus:ring-primary mt-0.5"
+                />
+                <Label htmlFor="acceptTermsDriver" className="cursor-pointer text-sm leading-relaxed">
+                  {lang === 'ar'
+                    ? <>أوافق على <Link to="/legal?section=terms" target="_blank" className="text-primary underline">الشروط والأحكام</Link> و<Link to="/legal?section=privacy" target="_blank" className="text-primary underline">سياسة الخصوصية</Link> بما فيها نسبة المنصة والتزامات السائق المالية</>
+                    : <>I agree to the <Link to="/legal?section=terms" target="_blank" className="text-primary underline">Terms & Conditions</Link> and <Link to="/legal?section=privacy" target="_blank" className="text-primary underline">Privacy Policy</Link>, including platform commission and driver payment obligations</>}
+                </Label>
+              </div>
+
+              <Button type="button" className="w-full gap-2" size="lg" disabled={loading || !acceptedTerms} onClick={handleDriverSubmit}>
                 {loading ? (lang === 'ar' ? 'جاري الإرسال...' : 'Submitting...') : (lang === 'ar' ? 'إرسال طلب التسجيل' : 'Submit Application')}
                 <Arrow className="w-4 h-4" />
               </Button>
