@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { useAppSettings } from '@/hooks/useAppSettings';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -38,6 +39,7 @@ const Dashboard = () => {
   useRideMessageNotifications();
   const { user, signOut } = useAuth();
   const { t, lang, setLang, appName } = useLanguage();
+  const { settings } = useAppSettings();
   const navigate = useNavigate();
   const { toast } = useToast();
   const Back = lang === 'ar' ? ChevronRight : ChevronLeft;
@@ -695,6 +697,13 @@ const Dashboard = () => {
           )}
         </div>
       </header>
+
+      {/* Announcement Banner */}
+      {(lang === 'ar' ? settings.announcement_ar : settings.announcement_en) && (
+        <div className="bg-secondary/10 text-secondary px-4 py-2 text-sm text-center font-medium shrink-0">
+          {lang === 'ar' ? settings.announcement_ar : settings.announcement_en}
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 relative">
         <MapView
