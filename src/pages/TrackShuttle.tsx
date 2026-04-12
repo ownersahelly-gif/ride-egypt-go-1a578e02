@@ -40,7 +40,7 @@ interface PassengerStop {
 
 const TrackShuttle = () => {
   const { user } = useAuth();
-  const { t, lang } = useLanguage();
+  const { t, lang, appName } = useLanguage();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
