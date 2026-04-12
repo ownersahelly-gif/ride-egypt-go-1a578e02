@@ -379,6 +379,31 @@ const DriverDashboard = () => {
     else setRouteRequestForm(p => ({ ...p, destination_lat: lat, destination_lng: lng, destination_name: p.destination_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}` }));
   };
 
+  const startTrip = async (slot: any) => {
+    if (!user || !shuttle) return;
+    setStartingTrip(true);
+    try {
+      // Send push notification to all booked riders
+      await supabase.functions.invoke('push-notification', {
+        body: {
+          notification_type: 'trip_started',
+          record: {
+            shuttle_id: shuttle.id,
+            route_id: slot.routeId,
+            driver_id: user.id,
+            scheduled_date: slot.dateStr,
+            scheduled_time: slot.time,
+            direction: slot.direction === 'back' ? 'return' : 'go',
+          },
+        },
+      });
+    } catch (e) {
+      console.error('Failed to send trip started notification:', e);
+    }
+    setStartingTrip(false);
+    navigate('/active-ride');
+  };
+
   const statusColors: Record<string, string> = {
     active: 'bg-green-100 text-green-700', inactive: 'bg-muted text-muted-foreground',
     maintenance: 'bg-secondary/20 text-secondary', pending: 'bg-secondary/20 text-secondary',
