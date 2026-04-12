@@ -14,7 +14,8 @@ import PlacesAutocomplete from '@/components/PlacesAutocomplete';
 import {
   ChevronLeft, Route, Users, Car, Ticket, BarChart3, Plus, Edit, Trash2,
   CheckCircle2, XCircle, MapPin, Clock, Search, Globe, LogOut, Shield,
-  Loader2, Eye, Database, Settings, Phone, Package, ListOrdered, RotateCcw
+  Loader2, Eye, Database, Settings, Phone, Package, ListOrdered, RotateCcw,
+  Building2, DollarSign, Link2
 } from 'lucide-react';
 import PackagePricing from '@/components/admin/PackagePricing';
 
