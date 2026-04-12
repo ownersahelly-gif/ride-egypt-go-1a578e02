@@ -466,9 +466,45 @@ const BookRide = () => {
     }
   };
 
-  // --- Buy Bundle ---
-  const handleBuyBundle = async (bundle: any) => {
-    if (!user || !paymentProof) {
+  // --- Factor priority calculation ---
+  const getAppliedFactor = (pkg: any): number => {
+    // 1. Route override (highest priority)
+    const routeOverride = routeOverrides.find(o => o.package_template_id === pkg.id);
+    if (routeOverride) return Number(routeOverride.factor_override);
+
+    // 2. Time-based rule
+    const now = new Date();
+    const currentDay = now.getDay();
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const matchingTimeRule = timeRules.find(tr => {
+      if (!tr.is_active) return false;
+      if (tr.route_id && tr.route_id !== selectedRide?.route_id) return false;
+      if (tr.day_of_week && tr.day_of_week.length > 0 && !tr.day_of_week.includes(currentDay)) return false;
+      if (tr.start_time && tr.end_time) {
+        const st = tr.start_time.slice(0, 5);
+        const et = tr.end_time.slice(0, 5);
+        if (currentTime < st || currentTime > et) return false;
+      }
+      return true;
+    });
+    if (matchingTimeRule) return Number(matchingTimeRule.factor);
+
+    // 3. Package factor
+    if (pkg.factor && Number(pkg.factor) !== 1) return Number(pkg.factor);
+
+    // 4. Global default
+    return globalDefaultFactor;
+  };
+
+  const getPackagePrice = (pkg: any, routePrice: number): number => {
+    const rides = pkg.ride_count || 30; // unlimited defaults to 30 for pricing display
+    const factor = getAppliedFactor(pkg);
+    return Math.round(routePrice * rides * factor);
+  };
+
+  // --- Buy Package ---
+  const handleBuyPackage = async (pkg: any) => {
+    if (!user || !paymentProof || !selectedRide?.route_id) {
       toast({ title: lang === 'ar' ? 'أرفق إثبات الدفع' : 'Attach payment proof', variant: 'destructive' });
       return;
     }
@@ -482,15 +518,15 @@ const BookRide = () => {
         proofUrl = await uploadToBunny(paymentProof, filePath);
       }
       const expiresAt = new Date();
-      if (bundle.bundle_type === 'weekly') expiresAt.setDate(expiresAt.getDate() + 7);
-      else expiresAt.setDate(expiresAt.getDate() + 30);
+      expiresAt.setDate(expiresAt.getDate() + pkg.validity_days);
 
+      const rideCount = pkg.ride_count || 9999; // unlimited
       const { error } = await supabase.from('bundle_purchases').insert({
         user_id: user.id,
-        bundle_id: bundle.id,
-        route_id: bundle.route_id,
-        rides_remaining: bundle.ride_count,
-        rides_total: bundle.ride_count,
+        bundle_id: pkg.id,
+        route_id: selectedRide.route_id,
+        rides_remaining: rideCount,
+        rides_total: rideCount,
         expires_at: expiresAt.toISOString(),
         status: 'active',
         payment_proof_url: proofUrl,
@@ -498,11 +534,13 @@ const BookRide = () => {
       if (error) throw error;
 
       toast({
-        title: lang === 'ar' ? 'تم شراء الباقة!' : 'Bundle purchased!',
-        description: lang === 'ar' ? `${bundle.ride_count} رحلة متاحة` : `${bundle.ride_count} rides available`,
+        title: lang === 'ar' ? 'تم شراء الباقة!' : 'Package purchased!',
+        description: pkg.ride_count
+          ? (lang === 'ar' ? `${pkg.ride_count} رحلة متاحة` : `${pkg.ride_count} rides available`)
+          : (lang === 'ar' ? 'رحلات غير محدودة!' : 'Unlimited rides!'),
       });
       const { data: purchases } = await supabase.from('bundle_purchases').select('*')
-        .eq('user_id', user.id).eq('route_id', bundle.route_id).eq('status', 'active')
+        .eq('user_id', user.id).eq('route_id', selectedRide.route_id).eq('status', 'active')
         .gt('rides_remaining', 0).gt('expires_at', new Date().toISOString()).limit(1);
       setActiveBundlePurchase(purchases?.[0] || null);
       setPaymentProof(null); setPaymentPreview(null); setShowBundleSection(false);
