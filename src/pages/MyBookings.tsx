@@ -416,19 +416,30 @@ const MyBookings = () => {
                   )}
 
                    {/* Cancelled trip banner */}
-                  {booking.status === 'cancelled' && !booking.skipped_at && (
-                    <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 mb-3 flex items-start gap-2">
-                      <Ban className="w-5 h-5 text-destructive mt-0.5 shrink-0" />
-                      <div className="flex-1">
-                        <p className="text-sm font-bold text-destructive">
-                          {lang === 'ar' ? 'تم إلغاء هذه الرحلة' : 'This trip has been cancelled'}
+                  {booking.status === 'cancelled' && !booking.skipped_at && (() => {
+                    // Determine if cancelled by driver (departure passed 30+ min) or by rider
+                    const [ch, cm] = (booking.scheduled_time || '00:00').split(':').map(Number);
+                    const depT = new Date(booking.scheduled_date + 'T00:00:00');
+                    depT.setHours(ch, cm, 0);
+                    const msSinceDep = Date.now() - depT.getTime();
+                    const cancelledByDriver = msSinceDep > 30 * 60 * 1000;
+                    return (
+                      <div className="bg-destructive/15 border-2 border-destructive/30 rounded-xl p-4 mb-3 text-center">
+                        <Ban className="w-10 h-10 text-destructive mx-auto mb-2" />
+                        <p className="text-lg font-extrabold text-destructive uppercase tracking-wide">
+                          {lang === 'ar' ? 'ملغاة' : 'CANCELLED'}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {lang === 'ar' ? 'لا يمكنك التتبع أو المحادثة في الرحلات الملغاة' : 'Tracking and chat are disabled for cancelled trips'}
+                        <p className="text-sm text-destructive/80 font-medium mt-1">
+                          {cancelledByDriver
+                            ? (lang === 'ar' ? 'تم الإلغاء بواسطة السائق — انتظر استرداد كامل المبلغ' : 'Cancelled by the driver — wait for your full refund')
+                            : (lang === 'ar' ? 'تم الإلغاء بواسطتك — انتظر مراجعة طلب الاسترداد' : 'Cancelled by you — wait for your refund review')}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {lang === 'ar' ? 'التتبع والمحادثة غير متاحة' : 'Tracking and chat are disabled'}
                         </p>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-primary">{booking.total_price} EGP</span>
