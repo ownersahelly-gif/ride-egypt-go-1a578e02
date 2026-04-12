@@ -516,7 +516,7 @@ const PartnerDashboard = () => {
                       markers={[
                         { lat: routeForm.origin_lat, lng: routeForm.origin_lng, label: 'A', color: 'green' },
                         { lat: routeForm.destination_lat, lng: routeForm.destination_lng, label: 'B', color: 'red' },
-                        ...routeForm.stops.filter(s => s.lat !== 0).map((s, i) => ({ lat: s.lat, lng: s.lng, label: \`\${i + 1}\`, color: 'blue' as const })),
+                        ...routeForm.stops.filter(s => s.lat !== 0).map((s, i) => ({ lat: s.lat, lng: s.lng, label: `${i + 1}`, color: 'blue' as const })),
                         ...(newStop.lat !== 0 ? [{ lat: newStop.lat, lng: newStop.lng, label: '📍', color: 'orange' as const }] : []),
                       ]}
                       onMapClick={(lat, lng) => setNewStop(p => ({ ...p, lat: parseFloat(lat.toFixed(6)), lng: parseFloat(lng.toFixed(6)) }))}
