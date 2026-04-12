@@ -1495,7 +1495,7 @@ const DriverDashboard = () => {
                             ) : (
                               <div>
                                 <Button className="w-full h-12 text-base rounded-xl opacity-60" size="lg" onClick={() => {
-                                  toast.info(getWaitMessage());
+                                  toast({ title: getWaitMessage() });
                                 }}>
                                   <Play className="w-5 h-5 me-2" />
                                   {lang === 'ar' ? 'ابدأ الرحلة' : 'Start Trip'}
