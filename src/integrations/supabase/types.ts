@@ -53,8 +53,10 @@ export type Database = {
           dropoff_stop_id: string | null
           dropped_off_at: string | null
           id: string
+          partner_fee: number
           payment_proof_url: string | null
           pickup_stop_id: string | null
+          platform_fee: number
           route_id: string | null
           scheduled_date: string
           scheduled_time: string
@@ -83,8 +85,10 @@ export type Database = {
           dropoff_stop_id?: string | null
           dropped_off_at?: string | null
           id?: string
+          partner_fee?: number
           payment_proof_url?: string | null
           pickup_stop_id?: string | null
+          platform_fee?: number
           route_id?: string | null
           scheduled_date: string
           scheduled_time: string
@@ -113,8 +117,10 @@ export type Database = {
           dropoff_stop_id?: string | null
           dropped_off_at?: string | null
           id?: string
+          partner_fee?: number
           payment_proof_url?: string | null
           pickup_stop_id?: string | null
+          platform_fee?: number
           route_id?: string | null
           scheduled_date?: string
           scheduled_time?: string
@@ -614,41 +620,289 @@ export type Database = {
         }
         Relationships: []
       }
+      partner_companies: {
+        Row: {
+          bank_details: string | null
+          commission_percentage: number
+          contact_email: string | null
+          contact_phone: string | null
+          created_at: string
+          id: string
+          name: string
+          notes: string | null
+          referral_code: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bank_details?: string | null
+          commission_percentage?: number
+          contact_email?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          notes?: string | null
+          referral_code: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bank_details?: string | null
+          commission_percentage?: number
+          contact_email?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          notes?: string | null
+          referral_code?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      partner_earnings: {
+        Row: {
+          amount: number
+          booking_id: string | null
+          created_at: string
+          id: string
+          partner_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount?: number
+          booking_id?: string | null
+          created_at?: string
+          id?: string
+          partner_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          booking_id?: string | null
+          created_at?: string
+          id?: string
+          partner_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_earnings_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_earnings_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partner_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      partner_referrals: {
+        Row: {
+          created_at: string
+          id: string
+          partner_id: string
+          referral_code_used: string
+          referred_user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          partner_id: string
+          referral_code_used: string
+          referred_user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          partner_id?: string
+          referral_code_used?: string
+          referred_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_referrals_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partner_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      partner_route_requests: {
+        Row: {
+          admin_notes: string | null
+          created_at: string
+          destination_lat: number
+          destination_lng: number
+          destination_name: string
+          estimated_duration_minutes: number
+          id: string
+          name_ar: string
+          name_en: string
+          origin_lat: number
+          origin_lng: number
+          origin_name: string
+          partner_id: string
+          price: number
+          status: string
+          stops_json: Json
+          updated_at: string
+        }
+        Insert: {
+          admin_notes?: string | null
+          created_at?: string
+          destination_lat: number
+          destination_lng: number
+          destination_name: string
+          estimated_duration_minutes?: number
+          id?: string
+          name_ar: string
+          name_en: string
+          origin_lat: number
+          origin_lng: number
+          origin_name: string
+          partner_id: string
+          price?: number
+          status?: string
+          stops_json?: Json
+          updated_at?: string
+        }
+        Update: {
+          admin_notes?: string | null
+          created_at?: string
+          destination_lat?: number
+          destination_lng?: number
+          destination_name?: string
+          estimated_duration_minutes?: number
+          id?: string
+          name_ar?: string
+          name_en?: string
+          origin_lat?: number
+          origin_lng?: number
+          origin_name?: string
+          partner_id?: string
+          price?: number
+          status?: string
+          stops_json?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_route_requests_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partner_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_earnings: {
+        Row: {
+          amount: number
+          booking_id: string | null
+          created_at: string
+          driver_id: string | null
+          driver_payment_status: string
+          id: string
+          payment_method: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount?: number
+          booking_id?: string | null
+          created_at?: string
+          driver_id?: string | null
+          driver_payment_status?: string
+          id?: string
+          payment_method?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          booking_id?: string | null
+          created_at?: string
+          driver_id?: string | null
+          driver_payment_status?: string
+          id?: string
+          payment_method?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_earnings_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
+          accepted_terms_at: string | null
           avatar_url: string | null
           created_at: string
           full_name: string | null
           id: string
           phone: string | null
+          referred_by_partner_id: string | null
           updated_at: string
           user_id: string
           user_type: Database["public"]["Enums"]["user_type"]
           wallet_balance: number
         }
         Insert: {
+          accepted_terms_at?: string | null
           avatar_url?: string | null
           created_at?: string
           full_name?: string | null
           id?: string
           phone?: string | null
+          referred_by_partner_id?: string | null
           updated_at?: string
           user_id: string
           user_type?: Database["public"]["Enums"]["user_type"]
           wallet_balance?: number
         }
         Update: {
+          accepted_terms_at?: string | null
           avatar_url?: string | null
           created_at?: string
           full_name?: string | null
           id?: string
           phone?: string | null
+          referred_by_partner_id?: string | null
           updated_at?: string
           user_id?: string
           user_type?: Database["public"]["Enums"]["user_type"]
           wallet_balance?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_referred_by_partner_id_fkey"
+            columns: ["referred_by_partner_id"]
+            isOneToOne: false
+            referencedRelation: "partner_companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ratings: {
         Row: {
