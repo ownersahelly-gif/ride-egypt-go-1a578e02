@@ -287,10 +287,12 @@ const MyBookings = () => {
                         </span>
                       )}
                     </div>
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusColors[booking.status] || ''}`}>
-                      {booking.status === 'boarded' 
-                        ? (lang === 'ar' ? 'في الشاتل' : 'On Board')
-                        : t(`booking.status.${booking.status}`)}
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${effectivelyCancelled ? statusColors['cancelled'] : (statusColors[booking.status] || '')}`}>
+                      {effectivelyCancelled
+                        ? (lang === 'ar' ? 'ملغاة' : 'Cancelled')
+                        : booking.status === 'boarded' 
+                          ? (lang === 'ar' ? 'في الشاتل' : 'On Board')
+                          : t(`booking.status.${booking.status}`)}
                     </span>
                   </div>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
