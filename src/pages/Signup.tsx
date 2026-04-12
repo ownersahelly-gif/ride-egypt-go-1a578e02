@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Mail, Lock, User, ArrowRight, ArrowLeft, Car, Users, Upload, Camera, CheckCircle2, Phone, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, ArrowLeft, Car, Users, Upload, Camera, CheckCircle2, Phone, Eye, EyeOff, Building2 } from 'lucide-react';
 
-type UserRole = 'rider' | 'driver';
+type UserRole = 'rider' | 'driver' | 'company';
 
 interface UploadedFile {
   file: File;
@@ -80,6 +80,212 @@ const StepIndicator = ({ current, total }: { current: number; total: number }) =
     ))}
   </div>
 );
+
+// Company Signup Component
+const CompanySignup = ({ lang, t, appName, signUp, navigate, toast, referralCode, setRole, Arrow, BackArrow }: any) => {
+  const [step, setStep] = useState(1);
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // Company details
+  const [companyName, setCompanyName] = useState('');
+  const [numClients, setNumClients] = useState('');
+  const [numDrivers, setNumDrivers] = useState('');
+  const [numRoutes, setNumRoutes] = useState('');
+  const [bankDetails, setBankDetails] = useState('');
+
+  const handleSubmit = async () => {
+    if (!acceptedTerms) {
+      toast({ title: lang === 'ar' ? 'يجب الموافقة على الشروط والأحكام' : 'You must accept the Terms & Conditions', variant: 'destructive' });
+      return;
+    }
+    if (password.length < 6) {
+      toast({ title: t('auth.error'), description: t('auth.passwordMin'), variant: 'destructive' });
+      return;
+    }
+    setLoading(true);
+    try {
+      const signUpData = await signUp(email, password, fullName);
+      const userId = signUpData?.user?.id;
+      if (!userId) throw new Error('Signup failed');
+
+      let hasSession = !!signUpData?.session;
+      if (!hasSession) {
+        try {
+          await supabase.auth.signInWithPassword({ email, password });
+          const { data: { session } } = await supabase.auth.getSession();
+          hasSession = !!session;
+        } catch {}
+      }
+
+      if (hasSession) {
+        await supabase.from('profiles').update({
+          user_type: 'customer' as const,
+          phone: phone || null,
+          accepted_terms_at: new Date().toISOString(),
+        }).eq('user_id', userId);
+
+        // Create partner company
+        const referralCode = companyName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) + Math.random().toString(36).slice(2, 6);
+        await supabase.from('partner_companies').insert({
+          user_id: userId,
+          name: companyName,
+          contact_email: email,
+          contact_phone: phone,
+          bank_details: bankDetails || null,
+          referral_code: referralCode,
+          notes: `Clients: ${numClients}, Drivers: ${numDrivers}, Routes: ${numRoutes}`,
+        });
+
+        toast({
+          title: lang === 'ar' ? 'تم إنشاء حسابك!' : 'Account Created!',
+          description: lang === 'ar' ? 'سيتم مراجعة طلب الشراكة' : 'Your partner application is under review',
+        });
+        navigate('/partner');
+      } else {
+        toast({
+          title: lang === 'ar' ? 'تم إنشاء حسابك!' : 'Account Created!',
+          description: lang === 'ar' ? 'يرجى تأكيد بريدك الإلكتروني' : 'Please confirm your email, then log in',
+        });
+        navigate('/login');
+      }
+    } catch (error: any) {
+      toast({ title: t('auth.error'), description: error.message, variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-surface px-4 py-8">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-6">
+          <Link to="/" className="text-3xl font-bold text-primary font-arabic">{appName}</Link>
+          <h1 className="text-2xl font-bold text-foreground mt-4">
+            {lang === 'ar' ? 'تسجيل شركة / مجموعة نقل' : 'Register as Company / Transport Group'}
+          </h1>
+        </div>
+
+        <StepIndicator current={step} total={2} />
+
+        <div className="bg-card rounded-2xl shadow-card p-6 space-y-4">
+          <button type="button" onClick={() => { if (step === 1) setRole(null); else setStep(1); }} className="text-sm text-primary hover:underline flex items-center gap-1">
+            <BackArrow className="w-4 h-4" />
+            {step === 1 ? (lang === 'ar' ? 'تغيير نوع الحساب' : 'Change account type') : (lang === 'ar' ? 'الخطوة السابقة' : 'Previous step')}
+          </button>
+
+          {step === 1 && (
+            <>
+              <div className="space-y-2">
+                <Label>{t('auth.fullName')}</Label>
+                <div className="relative">
+                  <User className="absolute start-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input placeholder={lang === 'ar' ? 'اسمك الكامل' : 'Your full name'} className="ps-10" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>{lang === 'ar' ? 'اسم الشركة / المجموعة' : 'Company / Group Name'}</Label>
+                <div className="relative">
+                  <Building2 className="absolute start-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input placeholder={lang === 'ar' ? 'مثال: مجموعة نقل القاهرة' : 'e.g. Cairo Transport Group'} className="ps-10" value={companyName} onChange={(e) => setCompanyName(e.target.value)} required />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>{lang === 'ar' ? 'رقم الهاتف' : 'Phone Number'}</Label>
+                <div className="relative">
+                  <Phone className="absolute start-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input type="tel" placeholder="01xxxxxxxxx" className="ps-10" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>{t('auth.email')}</Label>
+                <div className="relative">
+                  <Mail className="absolute start-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input type="email" placeholder="name@example.com" className="ps-10" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>{t('auth.password')}</Label>
+                <div className="relative">
+                  <Lock className="absolute start-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input type={showPassword ? 'text' : 'password'} placeholder="••••••••" className="ps-10 pe-10" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute end-3 top-3 text-muted-foreground hover:text-foreground">
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <Button className="w-full gap-2" size="lg" onClick={() => {
+                if (!fullName || !companyName || !phone || !email || !password) {
+                  toast({ title: t('auth.error'), description: lang === 'ar' ? 'يرجى ملء جميع الحقول' : 'Please fill all fields', variant: 'destructive' });
+                  return;
+                }
+                if (password.length < 6) {
+                  toast({ title: t('auth.error'), description: t('auth.passwordMin'), variant: 'destructive' });
+                  return;
+                }
+                setStep(2);
+              }}>
+                {lang === 'ar' ? 'التالي' : 'Next'}
+                <Arrow className="w-4 h-4" />
+              </Button>
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              <div className="space-y-2">
+                <Label>{lang === 'ar' ? 'عدد العملاء الحاليين' : 'Number of current clients'}</Label>
+                <Input type="number" placeholder={lang === 'ar' ? 'مثال: 50' : 'e.g. 50'} value={numClients} onChange={(e) => setNumClients(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>{lang === 'ar' ? 'عدد السائقين' : 'Number of drivers'}</Label>
+                <Input type="number" placeholder={lang === 'ar' ? 'مثال: 5' : 'e.g. 5'} value={numDrivers} onChange={(e) => setNumDrivers(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>{lang === 'ar' ? 'عدد المسارات' : 'Number of routes'}</Label>
+                <Input type="number" placeholder={lang === 'ar' ? 'مثال: 3' : 'e.g. 3'} value={numRoutes} onChange={(e) => setNumRoutes(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>{lang === 'ar' ? 'تفاصيل الحساب البنكي / InstaPay' : 'Bank / InstaPay Details'}</Label>
+                <Input placeholder={lang === 'ar' ? 'رقم InstaPay أو تفاصيل الحساب' : 'InstaPay number or account details'} value={bankDetails} onChange={(e) => setBankDetails(e.target.value)} />
+              </div>
+
+              {/* Terms */}
+              <div className="flex items-start gap-3 pt-2 border-t border-border">
+                <input
+                  type="checkbox"
+                  id="acceptTermsCompany"
+                  checked={acceptedTerms}
+                  onChange={(e) => setAcceptedTerms(e.target.checked)}
+                  className="w-5 h-5 rounded border-border text-primary focus:ring-primary mt-0.5"
+                />
+                <Label htmlFor="acceptTermsCompany" className="cursor-pointer text-sm leading-relaxed">
+                  {lang === 'ar'
+                    ? <>أوافق على <Link to="/legal?section=terms" target="_blank" className="text-primary underline">الشروط والأحكام</Link> و<Link to="/legal?section=privacy" target="_blank" className="text-primary underline">سياسة الخصوصية</Link></>
+                    : <>I agree to the <Link to="/legal?section=terms" target="_blank" className="text-primary underline">Terms & Conditions</Link> and <Link to="/legal?section=privacy" target="_blank" className="text-primary underline">Privacy Policy</Link></>}
+                </Label>
+              </div>
+
+              <Button className="w-full gap-2" size="lg" disabled={loading || !acceptedTerms} onClick={handleSubmit}>
+                {loading ? (lang === 'ar' ? 'جاري التسجيل...' : 'Creating account...') : (lang === 'ar' ? 'إرسال طلب الشراكة' : 'Submit Partner Application')}
+                <Arrow className="w-4 h-4" />
+              </Button>
+            </>
+          )}
+
+          <Link to="/login" className="block text-center text-sm text-primary font-medium hover:underline">
+            {t('auth.hasAccount')} {t('auth.loginLink')}
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const Signup = () => {
   const { signUp } = useAuth();
@@ -364,6 +570,23 @@ const Signup = () => {
                 </p>
               </div>
             </button>
+
+            <button
+              onClick={() => setRole('company')}
+              className="w-full bg-card border-2 border-border rounded-2xl p-6 hover:border-amber-500 transition-all text-start flex items-center gap-4 group"
+            >
+              <div className="w-14 h-14 rounded-xl bg-amber-500/10 flex items-center justify-center group-hover:bg-amber-500/20 shrink-0">
+                <Building2 className="w-7 h-7 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground text-lg">
+                  {lang === 'ar' ? 'شركة / مجموعة نقل' : 'Company / Transport Group'}
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {lang === 'ar' ? 'لديك مجموعة واتساب أو شركة نقل؟ انضم كشريك' : 'Have a WhatsApp group or transport company? Join as partner'}
+                </p>
+              </div>
+            </button>
           </div>
 
           <Link to="/login" className="block text-center text-sm text-primary font-medium hover:underline mt-6">
@@ -372,6 +595,11 @@ const Signup = () => {
         </div>
       </div>
     );
+  }
+
+  // Company signup flow
+  if (role === 'company') {
+    return <CompanySignup lang={lang} t={t} appName={appName} signUp={signUp} navigate={navigate} toast={toast} referralCode={referralCode} setRole={setRole} Arrow={Arrow} BackArrow={BackArrow} />;
   }
 
   // Rider: simple form

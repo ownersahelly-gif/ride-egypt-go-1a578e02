@@ -552,15 +552,20 @@ const DriverDashboard = () => {
 
   const todayBookings = bookings.filter(b => b.scheduled_date === new Date().toISOString().split('T')[0] && b.status !== 'cancelled');
   const completedBookings = bookings.filter(b => b.status === 'completed');
-  const totalEarnings = completedBookings.reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
+  const totalEarningsGross = completedBookings.reduce((sum, b) => sum + parseFloat(b.total_price || 0), 0);
+  const platformFeeTotal = totalEarningsGross * 0.10;
+  const totalEarnings = totalEarningsGross - platformFeeTotal;
   const scheduledRouteIds = new Set(driverSchedules.map(s => s.route_id));
 
   // Earnings calculations
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
   const monthStartStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
-  const dailyEarnings = completedBookings.filter(b => b.scheduled_date === todayStr).reduce((s, b) => s + parseFloat(b.total_price || 0), 0);
-  const monthlyEarnings = completedBookings.filter(b => b.scheduled_date >= monthStartStr).reduce((s, b) => s + parseFloat(b.total_price || 0), 0);
+  const dailyEarningsGross = completedBookings.filter(b => b.scheduled_date === todayStr).reduce((s, b) => s + parseFloat(b.total_price || 0), 0);
+  const dailyEarnings = dailyEarningsGross * 0.9;
+  const monthlyEarningsGross = completedBookings.filter(b => b.scheduled_date >= monthStartStr).reduce((s, b) => s + parseFloat(b.total_price || 0), 0);
+  const monthlyEarnings = monthlyEarningsGross * 0.9;
+  const driverBalance = profile?.driver_balance || 0;
 
   const getExpectedEarnings = (routeObj: any) => {
     const price = parseFloat(routeObj.price || 0);
@@ -1071,14 +1076,56 @@ const DriverDashboard = () => {
               <div className="space-y-4">
                 <h2 className="text-lg font-bold text-foreground text-center">{lang === 'ar' ? 'أرباحك' : 'Your Earnings'}</h2>
 
+                {/* Platform fee notice */}
+                {driverBalance > 0 && (
+                  <div className="bg-destructive/10 border border-destructive/30 rounded-2xl p-4">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold text-destructive text-sm">
+                          {lang === 'ar' ? 'مستحقات المنصة' : 'Platform Dues'}
+                        </p>
+                        <p className="text-2xl font-bold text-destructive">{driverBalance.toFixed(0)} EGP</p>
+                        <p className="text-xs text-destructive/80 mt-1">
+                          {lang === 'ar'
+                            ? 'يجب تسديد هذا المبلغ عبر InstaPay بنهاية الشهر. التأخير يضيف 100 جنيه يومياً.'
+                            : 'Due by end of month via InstaPay. Late payments incur 100 EGP/day penalty.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Platform fee info */}
+                <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4">
+                  <div className="flex items-start gap-3">
+                    <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <p className="font-semibold text-foreground text-sm">{lang === 'ar' ? 'كيف تعمل الأرباح' : 'How Earnings Work'}</p>
+                      <p>{lang === 'ar'
+                        ? '• نسبة المنصة 10% من كل رحلة'
+                        : '• Platform takes 10% from each ride'}</p>
+                      <p>{lang === 'ar'
+                        ? '• للدفع الإلكتروني: يتم خصم النسبة تلقائياً قبل التحويل'
+                        : '• Online payments: 10% is deducted automatically before transfer'}</p>
+                      <p>{lang === 'ar'
+                        ? '• للدفع الكاش: يجب إرسال نسبة المنصة عبر InstaPay بنهاية كل شهر'
+                        : '• Cash payments: you must send the platform fee via InstaPay by end of each month'}</p>
+                      <p className="text-destructive font-medium">{lang === 'ar'
+                        ? '• التأخير في الدفع يضيف 100 جنيه يومياً ويعرضك لإجراءات قانونية'
+                        : '• Late payments add 100 EGP/day penalty and may result in legal action'}</p>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Earnings summary */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="bg-card border border-border rounded-2xl p-4">
-                    <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'أرباح اليوم' : "Today's Earnings"}</p>
+                    <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'أرباحك اليوم (بعد الخصم)' : "Today (after 10%)"}</p>
                     <p className="text-2xl font-bold text-foreground">{dailyEarnings.toFixed(0)} <span className="text-sm font-normal text-muted-foreground">EGP</span></p>
                   </div>
                   <div className="bg-card border border-border rounded-2xl p-4">
-                    <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'أرباح الشهر' : 'This Month'}</p>
+                    <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'أرباحك الشهر (بعد الخصم)' : 'This Month (after 10%)'}</p>
                     <p className="text-2xl font-bold text-foreground">{monthlyEarnings.toFixed(0)} <span className="text-sm font-normal text-muted-foreground">EGP</span></p>
                   </div>
                 </div>
@@ -1088,7 +1135,7 @@ const DriverDashboard = () => {
                   <div className="grid grid-cols-3 gap-3 text-center">
                     <div>
                       <p className="text-xl font-bold text-foreground">{totalEarnings.toFixed(0)}</p>
-                      <p className="text-xs text-muted-foreground">EGP {lang === 'ar' ? 'إجمالي' : 'Total'}</p>
+                      <p className="text-xs text-muted-foreground">EGP {lang === 'ar' ? 'صافي' : 'Net'}</p>
                     </div>
                     <div>
                       <p className="text-xl font-bold text-foreground">{completedBookings.length}</p>
@@ -1104,14 +1151,14 @@ const DriverDashboard = () => {
                 {/* Per-route earnings breakdown */}
                 {allRoutes.filter(r => scheduledRouteIds.has(r.id)).length > 0 && (
                   <div className="space-y-2">
-                    <h3 className="font-semibold text-foreground text-sm">{lang === 'ar' ? 'الأرباح المتوقعة لكل مسار' : 'Expected Earnings Per Route'}</h3>
+                    <h3 className="font-semibold text-foreground text-sm">{lang === 'ar' ? 'الأرباح المتوقعة لكل مسار (بعد خصم 10%)' : 'Expected Earnings Per Route (after 10%)'}</h3>
                     {allRoutes.filter(r => scheduledRouteIds.has(r.id)).map(r => {
                       const earnings = getExpectedEarnings(r);
                       return (
                         <div key={r.id} className="bg-card border border-border rounded-xl p-3 flex items-center justify-between">
                           <div>
                             <p className="text-sm font-medium text-foreground">{lang === 'ar' ? r.name_ar : r.name_en}</p>
-                            <p className="text-xs text-muted-foreground">{r.price} EGP/{lang === 'ar' ? 'مقعد' : 'seat'}</p>
+                            <p className="text-xs text-muted-foreground">{r.price} EGP/{lang === 'ar' ? 'مقعد' : 'seat'} → {(r.price * 0.9).toFixed(0)} {lang === 'ar' ? 'لك' : 'for you'}</p>
                           </div>
                           <p className="text-sm font-bold text-green-600">~{earnings.perTrip.toFixed(0)} EGP/{lang === 'ar' ? 'رحلة' : 'trip'}</p>
                         </div>
