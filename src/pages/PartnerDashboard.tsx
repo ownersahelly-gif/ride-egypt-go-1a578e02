@@ -212,7 +212,7 @@ const PartnerDashboard = () => {
   // So displayed commission_percentage% is actually (commission_percentage% of 10%)
   const platformCutPercent = 10;
   const partnerCommissionDisplay = partner?.commission_percentage || 0;
-  // Actual partner earning per booking = total_price * (platformCutPercent/100) * (commission_percentage/100)
+  const effectiveTripPercent = (platformCutPercent * partnerCommissionDisplay) / 100;
 
   const pendingEarnings = earnings.filter(e => e.status === 'pending').reduce((s, e) => s + Number(e.amount), 0);
   const totalEarnings = earnings.reduce((s, e) => s + Number(e.amount), 0);
@@ -223,9 +223,9 @@ const PartnerDashboard = () => {
 
   if (!partner) {
     return (
-      <div className="min-h-screen bg-background flex flex-col">
+      <div className="h-[100dvh] bg-background flex flex-col overflow-hidden">
         <PartnerHeader title={lang === 'ar' ? 'برنامج الشراكة' : 'Partner Program'} />
-        <div className="flex-1 overflow-y-auto px-4 py-8 max-w-md mx-auto w-full">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-8 max-w-md mx-auto w-full" style={{ WebkitOverflowScrolling: 'touch' }}>
           {!showApply ? (
             <div className="space-y-6">
               <div className="bg-card border border-border rounded-2xl p-6 text-center">
@@ -282,9 +282,9 @@ const PartnerDashboard = () => {
 
   if (partner.status === 'pending') {
     return (
-      <div className="min-h-screen bg-background flex flex-col">
+      <div className="h-[100dvh] bg-background flex flex-col overflow-hidden">
         <PartnerHeader title={lang === 'ar' ? 'برنامج الشراكة' : 'Partner Program'} />
-        <div className="flex-1 overflow-y-auto px-4 py-8 max-w-md mx-auto text-center">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-8 max-w-md mx-auto text-center" style={{ WebkitOverflowScrolling: 'touch' }}>
           <Clock className="w-16 h-16 text-amber-500 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-foreground mb-2">{lang === 'ar' ? 'طلبك قيد المراجعة' : 'Application Under Review'}</h2>
           <p className="text-muted-foreground">{lang === 'ar' ? 'سنراجع طلبك ونتواصل معك قريبًا' : 'We\'ll review your application and get back to you soon.'}</p>
@@ -295,9 +295,9 @@ const PartnerDashboard = () => {
 
   if (partner.status === 'rejected') {
     return (
-      <div className="min-h-screen bg-background flex flex-col">
+      <div className="h-[100dvh] bg-background flex flex-col overflow-hidden">
         <PartnerHeader title={lang === 'ar' ? 'برنامج الشراكة' : 'Partner Program'} />
-        <div className="flex-1 overflow-y-auto px-4 py-8 max-w-md mx-auto text-center">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-8 max-w-md mx-auto text-center" style={{ WebkitOverflowScrolling: 'touch' }}>
           <XCircle className="w-16 h-16 text-destructive mx-auto mb-4" />
           <h2 className="text-xl font-bold text-foreground mb-2">{lang === 'ar' ? 'تم رفض طلبك' : 'Application Rejected'}</h2>
           {partner.notes && <p className="text-muted-foreground">{partner.notes}</p>}
@@ -308,13 +308,13 @@ const PartnerDashboard = () => {
 
   // Active partner dashboard
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-[100dvh] bg-background flex flex-col overflow-hidden">
       <PartnerHeader
         title={lang === 'ar' ? 'لوحة الشريك' : 'Partner Dashboard'}
-        subtitle={`${partner.name} — ${lang === 'ar' ? `العمولة: ${partnerCommissionDisplay}%` : `Commission: ${partnerCommissionDisplay}%`}`}
+        subtitle={`${partner.name} — ${lang === 'ar' ? `حصتك المعروضة: ${partnerCommissionDisplay}% من عمولة المنصة ${platformCutPercent}%` : `Shown cut: ${partnerCommissionDisplay}% of the platform’s ${platformCutPercent}% commission`}`}
       />
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="px-4 py-6 space-y-6 pb-12">
           {/* Referral Code */}
           <div className="bg-card border border-border rounded-2xl p-5">
@@ -355,12 +355,14 @@ const PartnerDashboard = () => {
           {/* Commission Info */}
           <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
             <p className="text-sm text-foreground font-medium mb-1">
-              {lang === 'ar' ? `عمولتك: ${partnerCommissionDisplay}% من أرباح المنصة` : `Your commission: ${partnerCommissionDisplay}% of platform earnings`}
+              {lang === 'ar'
+                ? `حصتك المعروضة ${partnerCommissionDisplay}% من عمولة المنصة ${platformCutPercent}%، أي ${effectiveTripPercent.toFixed(1)}% من سعر الرحلة`
+                : `Your shown cut is ${partnerCommissionDisplay}% of the platform’s ${platformCutPercent}% commission, which equals ${effectiveTripPercent.toFixed(1)}% of the trip price`}
             </p>
             <p className="text-xs text-muted-foreground">
               {lang === 'ar'
-                ? 'تُحسب عمولتك تلقائياً من أرباح المنصة لكل رحلة يحجزها عملاؤك المُحالين'
-                : 'Your commission is automatically calculated from platform earnings on every ride booked by your referred clients'}
+                ? 'عند تسجيل عميل باستخدام كودك ثم إكماله رحلة، يُحتسب ضمن إحالاتك وتُحسب أرباحك تلقائياً على هذا الأساس'
+                : 'When a customer signs up with your code and completes rides, they are counted under your referrals and your earnings are calculated automatically'}
             </p>
           </div>
 
@@ -451,6 +453,7 @@ const PartnerDashboard = () => {
                       className="h-full w-full"
                       center={{ lat: routeForm.origin_lat, lng: routeForm.origin_lng }}
                       zoom={13}
+                      gestureHandling="cooperative"
                       markers={[{ lat: routeForm.origin_lat, lng: routeForm.origin_lng, label: 'A', color: 'green' }]}
                       onMapClick={(lat, lng) => setRouteForm(p => ({ ...p, origin_lat: parseFloat(lat.toFixed(6)), origin_lng: parseFloat(lng.toFixed(6)) }))}
                       showUserLocation={false}
@@ -475,6 +478,7 @@ const PartnerDashboard = () => {
                       className="h-full w-full"
                       center={{ lat: routeForm.destination_lat, lng: routeForm.destination_lng }}
                       zoom={13}
+                      gestureHandling="cooperative"
                       markers={[{ lat: routeForm.destination_lat, lng: routeForm.destination_lng, label: 'B', color: 'red' }]}
                       onMapClick={(lat, lng) => setRouteForm(p => ({ ...p, destination_lat: parseFloat(lat.toFixed(6)), destination_lng: parseFloat(lng.toFixed(6)) }))}
                       showUserLocation={false}

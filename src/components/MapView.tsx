@@ -21,6 +21,7 @@ interface MapViewProps {
   className?: string;
   onMapClick?: (lat: number, lng: number) => void;
   showUserLocation?: boolean;
+  gestureHandling?: 'cooperative' | 'greedy' | 'auto' | 'none';
   connectionLine?: { from: { lat: number; lng: number }; to: { lat: number; lng: number }; color?: string } | null;
   connectionLines?: { from: { lat: number; lng: number }; to: { lat: number; lng: number }; color?: string }[];
 }
@@ -36,6 +37,7 @@ const MapView = ({
   className = '',
   onMapClick,
   showUserLocation = true,
+  gestureHandling = 'greedy',
   connectionLine = null,
   connectionLines = [],
 }: MapViewProps) => {
@@ -165,7 +167,7 @@ const MapView = ({
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: false,
-          gestureHandling: 'greedy',
+          gestureHandling,
           clickableIcons: false,
         }}
       >

@@ -1618,6 +1618,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      generate_unique_partner_referral_code: { Args: never; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

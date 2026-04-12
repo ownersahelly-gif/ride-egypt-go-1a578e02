@@ -345,9 +345,41 @@ const Signup = () => {
       toast({ title: t('auth.error'), description: t('auth.passwordMin'), variant: 'destructive' });
       return;
     }
+    if (referralCode.length > 0 && referralCode.length !== 6) {
+      toast({
+        title: lang === 'ar' ? 'كود الإحالة غير صحيح' : 'Invalid referral code',
+        description: lang === 'ar' ? 'يجب أن يتكون الكود من 6 أرقام' : 'The referral code must be 6 digits',
+        variant: 'destructive'
+      });
+      return;
+    }
     setLoading(true);
     try {
-      const signUpData = await signUp(email, password, fullName);
+      if (referralCode.length === 6) {
+        const { data: partner } = await supabase
+          .from('partner_companies')
+          .select('id')
+          .eq('referral_code', referralCode)
+          .eq('status', 'approved')
+          .maybeSingle();
+
+        if (!partner) {
+          toast({
+            title: lang === 'ar' ? 'كود الإحالة غير موجود' : 'Referral code not found',
+            description: lang === 'ar' ? 'هذا الكود غير تابع لشريك معتمد' : 'This code does not belong to an approved partner',
+            variant: 'destructive'
+          });
+          setLoading(false);
+          return;
+        }
+      }
+
+      const signUpData = await signUp(
+        email,
+        password,
+        fullName,
+        referralCode.length === 6 ? { referral_code: referralCode } : undefined
+      );
       const userId = signUpData?.user?.id;
       if (!userId) throw new Error('Signup failed');
 
@@ -366,15 +398,6 @@ const Signup = () => {
           ...(phone ? { phone } : {}),
           accepted_terms_at: new Date().toISOString(),
         }).eq('user_id', userId);
-
-        // Track referral if present
-        if (referralCode) {
-          const { data: partner } = await supabase.from('partner_companies').select('id').eq('referral_code', referralCode).eq('status', 'approved').single();
-          if (partner) {
-            await supabase.from('profiles').update({ referred_by_partner_id: partner.id }).eq('user_id', userId);
-            await supabase.from('partner_referrals').insert({ partner_id: partner.id, referred_user_id: userId, referral_code_used: referralCode });
-          }
-        }
       }
 
       if (!hasSession) {
