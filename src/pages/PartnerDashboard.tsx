@@ -473,8 +473,8 @@ const PartnerDashboard = () => {
           </div>
         )}
       </div>
-      <BottomNav />
     </div>
+  );
   );
 };
 
