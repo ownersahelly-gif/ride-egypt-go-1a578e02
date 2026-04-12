@@ -543,6 +543,19 @@ const TrackShuttle = () => {
               <div className="space-y-2">
                 <a href="tel:122" className="block"><Button variant="destructive" className="w-full" size="lg"><Phone className="w-5 h-5 me-2" />{lang === 'ar' ? 'الشرطة (122)' : 'Police (122)'}</Button></a>
                 <a href="tel:123" className="block"><Button variant="destructive" className="w-full" size="lg"><Phone className="w-5 h-5 me-2" />{lang === 'ar' ? 'الإسعاف (123)' : 'Ambulance (123)'}</Button></a>
+                <Button variant="outline" className="w-full" size="lg" onClick={() => {
+                  const text = lang === 'ar'
+                    ? `أحتاج مساعدة! أنا في رحلة مع ${appName}.`
+                    : `I need help! I'm on a ride with ${appName}.`;
+                  if (navigator.share) {
+                    navigator.share({ title: 'SOS', text }).catch(() => {});
+                  } else {
+                    navigator.clipboard.writeText(text);
+                    toast({ title: lang === 'ar' ? 'تم نسخ الرسالة' : 'Message copied!' });
+                  }
+                }}>
+                  <Share2 className="w-5 h-5 me-2" />{lang === 'ar' ? 'شارك موقعك' : 'Share location'}
+                </Button>
                 <Button variant="ghost" className="w-full" onClick={() => setSosActive(false)}>{lang === 'ar' ? 'إلغاء' : 'Cancel'}</Button>
               </div>
             </div>

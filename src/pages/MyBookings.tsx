@@ -6,7 +6,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/integrations/supabase/client';
 import { formatTime12h } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { MapPin, Clock, Ticket, ChevronLeft, ChevronRight, MessageCircle, Navigation, Key, Star, Phone, Users, Timer, AlertCircle, Receipt, X } from 'lucide-react';
+import { MapPin, Clock, Ticket, ChevronLeft, ChevronRight, MessageCircle, Navigation, Key, Star, Phone, Users, Timer, AlertCircle, Receipt, X, RotateCcw, Ban } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import RideChat from '@/components/RideChat';
 import RideRating from '@/components/RideRating';
@@ -106,12 +106,57 @@ const MyBookings = () => {
 
   const cancelBooking = async (id: string) => {
     setCancellingId(id);
+    const booking = bookings.find(b => b.id === id);
+    if (!booking) { setCancellingId(null); return; }
+
+    // Calculate refund based on 24-hour policy
+    const [h, m] = (booking.scheduled_time || '00:00').split(':').map(Number);
+    const depTime = new Date(booking.scheduled_date + 'T00:00:00');
+    depTime.setHours(h, m, 0);
+    const hoursUntilDeparture = (depTime.getTime() - Date.now()) / (1000 * 60 * 60);
+    const refundPercent = hoursUntilDeparture > 24 ? 0.5 : 0;
+    const refundAmount = Math.round(parseFloat(booking.total_price || 0) * refundPercent * 100) / 100;
+
     const { error } = await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', id);
     if (error) { toast({ title: t('auth.error'), description: error.message, variant: 'destructive' }); setCancellingId(null); return; }
+
+    // Create refund record if applicable
+    if (refundAmount > 0 && user) {
+      await supabase.from('refunds').insert({
+        user_id: user.id,
+        booking_id: id,
+        amount: refundAmount,
+        reason: 'Rider cancelled 24+ hours before departure',
+        status: 'pending',
+        refund_type: 'pending',
+      });
+    }
+
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'cancelled' } : b));
-    toast({ title: t('booking.cancelled') });
+    toast({ 
+      title: t('booking.cancelled'),
+      description: refundAmount > 0
+        ? (lang === 'ar' ? `سيتم استرداد ${refundAmount} جنيه (50%) إلى محفظتك` : `${refundAmount} EGP (50%) will be refunded to your wallet`)
+        : (lang === 'ar' ? 'لا يوجد استرداد — الإلغاء خلال 24 ساعة من الموعد' : 'No refund — cancelled within 24 hours of departure'),
+    });
     setCancellingId(null);
     setConfirmCancelId(null);
+  };
+
+  const [requestingRefund, setRequestingRefund] = useState<string | null>(null);
+  const requestRefund = async (booking: any) => {
+    if (!user) return;
+    setRequestingRefund(booking.id);
+    await supabase.from('refunds').insert({
+      user_id: user.id,
+      booking_id: booking.id,
+      amount: parseFloat(booking.total_price || 0),
+      reason: 'Rider requested refund for cancelled trip',
+      status: 'pending',
+      refund_type: 'pending',
+    });
+    toast({ title: lang === 'ar' ? 'تم إرسال طلب الاسترداد' : 'Refund request submitted' });
+    setRequestingRefund(null);
   };
 
   /** Calculate simple ETA for a booking */
