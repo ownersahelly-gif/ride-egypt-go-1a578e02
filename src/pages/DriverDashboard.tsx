@@ -727,7 +727,7 @@ const DriverDashboard = () => {
 
                         return (
                           <div key={key} className={`bg-card border rounded-2xl overflow-hidden transition-all ${
-                            slot.isPast ? 'border-border' : slot.direction === 'go' ? 'border-green-200' : 'border-blue-200'
+                            isExpired ? 'border-destructive/30 opacity-70' : slot.isPast ? 'border-border' : slot.direction === 'go' ? 'border-green-200' : 'border-blue-200'
                           }`}>
                             <div className="flex items-stretch">
                               <button
