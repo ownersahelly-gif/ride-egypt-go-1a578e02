@@ -380,9 +380,9 @@ const PartnerDashboard = () => {
           {/* Commission Info */}
           <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
             <p className="text-sm text-foreground font-medium mb-1">
-              {lang === 'ar'
+                ? `عمولتك \${partnerCommissionDisplay}% من أرباح الرحلة`
                 ? `عمولتك ${partnerCommissionDisplay}% من أرباح الرحلة`
-                : `Your shown cut is ${partnerCommissionDisplay}% of the platform’s ${platformCutPercent}% commission, which equals ${effectiveTripPercent.toFixed(1)}% of the trip price`}
+                : `Your commission is \${partnerCommissionDisplay}% of the ride profit`}
             </p>
             <p className="text-xs text-muted-foreground">
               {lang === 'ar'
