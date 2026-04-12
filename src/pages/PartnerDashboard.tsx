@@ -15,8 +15,8 @@ import {
 } from 'lucide-react';
 
 const PartnerDashboard = () => {
-  const { user } = useAuth();
-  const { lang, appName } = useLanguage();
+  const { user, signOut } = useAuth();
+  const { lang, setLang, appName } = useLanguage();
   const navigate = useNavigate();
   const { toast } = useToast();
   const Back = lang === 'ar' ? ChevronRight : ChevronLeft;
