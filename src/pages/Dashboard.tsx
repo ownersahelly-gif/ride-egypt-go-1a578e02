@@ -42,6 +42,8 @@ const Dashboard = () => {
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [isDriver, setIsDriver] = useState(false);
+  const [isPartner, setIsPartner] = useState(false);
+  const [partnerStatus, setPartnerStatus] = useState<string | null>(null);
   const [profile, setProfile] = useState<any>(null);
 
   // Booking flow state
@@ -117,13 +119,18 @@ const Dashboard = () => {
 
     if (!user) return;
     const fetchUserData = async () => {
-      const [{ data: profileData }, { data: rolesData }] = await Promise.all([
+      const [{ data: profileData }, { data: rolesData }, { data: partnerData }] = await Promise.all([
         supabase.from('profiles').select('*').eq('user_id', user.id).single(),
         supabase.from('user_roles').select('role').eq('user_id', user.id),
+        supabase.from('partner_companies').select('status').eq('user_id', user.id).maybeSingle(),
       ]);
       setProfile(profileData);
       const roles = (rolesData || []).map(r => r.role);
       setIsAdmin(roles.includes('admin'));
+      if (partnerData) {
+        setIsPartner(true);
+        setPartnerStatus(partnerData.status);
+      }
       const driverFlag = profileData?.user_type === 'driver' || roles.includes('moderator');
       setIsDriver(driverFlag);
       if (driverFlag) { navigate('/driver-dashboard'); return; }
@@ -699,6 +706,19 @@ const Dashboard = () => {
         <div className="bg-secondary/10 text-secondary px-4 py-2 text-sm text-center font-medium shrink-0">
           {lang === 'ar' ? settings.announcement_ar : settings.announcement_en}
         </div>
+      )}
+
+      {/* Partner Banner */}
+      {isPartner && (
+        <Link to="/partner" className={`block px-4 py-2.5 text-sm text-center font-medium shrink-0 ${
+          partnerStatus === 'approved' ? 'bg-green-100 text-green-700' : partnerStatus === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-destructive/10 text-destructive'
+        }`}>
+          {partnerStatus === 'approved'
+            ? (lang === 'ar' ? '🏢 لوحة الشريك — اضغط لإدارة شركتك' : '🏢 Partner Dashboard — tap to manage')
+            : partnerStatus === 'pending'
+            ? (lang === 'ar' ? '⏳ طلب الشراكة قيد المراجعة — اضغط للتفاصيل' : '⏳ Partner application under review — tap for details')
+            : (lang === 'ar' ? '❌ تم رفض طلب الشراكة — اضغط للتفاصيل' : '❌ Partner application rejected — tap for details')}
+        </Link>
       )}
 
       <div className="flex-1 min-h-0 relative">
