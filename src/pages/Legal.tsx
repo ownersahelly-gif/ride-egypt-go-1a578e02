@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, Shield, FileText, MapPin, Database, Scale } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Shield, FileText, MapPin, Scale } from 'lucide-react';
 
-type Section = 'privacy' | 'terms' | 'location' | 'data' | 'licenses';
+type Section = 'privacy' | 'terms' | 'location' | 'licenses';
 
 const Legal = () => {
   const { lang, appName } = useLanguage();
@@ -17,7 +17,6 @@ const Legal = () => {
     { key: 'privacy', icon: <Shield className="w-4 h-4" />, label: { en: 'Privacy Policy', ar: 'سياسة الخصوصية' } },
     { key: 'terms', icon: <FileText className="w-4 h-4" />, label: { en: 'Terms of Service', ar: 'شروط الخدمة' } },
     { key: 'location', icon: <MapPin className="w-4 h-4" />, label: { en: 'Location Usage', ar: 'استخدام الموقع' } },
-    { key: 'data', icon: <Database className="w-4 h-4" />, label: { en: 'Data Providers', ar: 'مزودو البيانات' } },
     { key: 'licenses', icon: <Scale className="w-4 h-4" />, label: { en: 'Licenses', ar: 'التراخيص' } },
   ];
 
