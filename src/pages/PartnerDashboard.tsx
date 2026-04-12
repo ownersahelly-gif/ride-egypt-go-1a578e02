@@ -12,7 +12,7 @@ import MapView from '@/components/MapView';
 import {
   Building2, Copy, Users, DollarSign, Route, Plus, Loader2,
   CheckCircle2, Clock, XCircle, MapPin, Trash2,
-  Globe, LogOut, User, ListOrdered, Package, ChevronUp, ChevronDown
+  Globe, LogOut, ListOrdered, Package, ChevronUp, ChevronDown
 } from 'lucide-react';
 
 const PartnerDashboard = () => {
@@ -196,9 +196,6 @@ const PartnerDashboard = () => {
           <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="p-2 rounded-full bg-primary-foreground/10">
             <Globe className="w-5 h-5" />
           </button>
-          <Link to="/profile" className="p-2 rounded-full bg-primary-foreground/10">
-            <User className="w-5 h-5" />
-          </Link>
           <button onClick={handleSignOut} className="p-2 rounded-full bg-primary-foreground/10">
             <LogOut className="w-5 h-5" />
           </button>
@@ -361,8 +358,8 @@ const PartnerDashboard = () => {
             </p>
             <p className="text-xs text-muted-foreground">
               {lang === 'ar'
-                ? 'عند تسجيل عميل باستخدام كودك ثم إكماله رحلة، يُحتسب ضمن إحالاتك وتُحسب أرباحك تلقائياً على هذا الأساس'
-                : 'When a customer signs up with your code and completes rides, they are counted under your referrals and your earnings are calculated automatically'}
+                ? 'يتم احتساب عمولتك تلقائياً عند إكمال عملائك المُحالين لأي رحلة'
+                : 'Your commission is automatically calculated when your referred clients complete rides'}
             </p>
           </div>
 
@@ -504,6 +501,29 @@ const PartnerDashboard = () => {
                     <ListOrdered className="w-4 h-4 text-primary" />
                     {lang === 'ar' ? 'نقاط التوقف' : 'Bus Stops'}
                   </Label>
+
+                  {/* Stops map with directions */}
+                  <div className="h-[280px] w-full overflow-hidden rounded-lg border border-border">
+                    <MapView
+                      className="h-full w-full"
+                      center={{ lat: routeForm.origin_lat, lng: routeForm.origin_lng }}
+                      zoom={11}
+                      gestureHandling="cooperative"
+                      origin={{ lat: routeForm.origin_lat, lng: routeForm.origin_lng }}
+                      destination={{ lat: routeForm.destination_lat, lng: routeForm.destination_lng }}
+                      waypoints={routeForm.stops.filter(s => s.lat !== 0).map(s => ({ lat: s.lat, lng: s.lng }))}
+                      showDirections={routeForm.origin_lat !== routeForm.destination_lat || routeForm.origin_lng !== routeForm.destination_lng}
+                      markers={[
+                        { lat: routeForm.origin_lat, lng: routeForm.origin_lng, label: 'A', color: 'green' },
+                        { lat: routeForm.destination_lat, lng: routeForm.destination_lng, label: 'B', color: 'red' },
+                        ...routeForm.stops.filter(s => s.lat !== 0).map((s, i) => ({ lat: s.lat, lng: s.lng, label: \`\${i + 1}\`, color: 'blue' as const })),
+                        ...(newStop.lat !== 0 ? [{ lat: newStop.lat, lng: newStop.lng, label: '📍', color: 'orange' as const }] : []),
+                      ]}
+                      onMapClick={(lat, lng) => setNewStop(p => ({ ...p, lat: parseFloat(lat.toFixed(6)), lng: parseFloat(lng.toFixed(6)) }))}
+                      showUserLocation={false}
+                    />
+                  </div>
+
                   {routeForm.stops.map((stop, i) => (
                     <div key={i} className="flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-2">
                       <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs flex items-center justify-center font-bold shrink-0">{i + 1}</span>
