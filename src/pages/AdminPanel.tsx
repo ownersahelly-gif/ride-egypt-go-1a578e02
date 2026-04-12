@@ -1562,36 +1562,17 @@ const AdminPanel = () => {
         )}
         {/* Users Tab */}
         {tab === 'users' && (() => {
-          const [userTypeFilter, setUserTypeFilter] = [
-            (window as any).__userTypeFilter || 'all',
-            (val: string) => { (window as any).__userTypeFilter = val; setAllProfiles([...allProfiles]); }
-          ];
-          const [userTimeFilter, setUserTimeFilter] = [
-            (window as any).__userTimeFilter || 'all',
-            (val: string) => { (window as any).__userTimeFilter = val; setAllProfiles([...allProfiles]); }
-          ];
-          const [userSearch, setUserSearch] = [
-            (window as any).__userSearch || '',
-            (val: string) => { (window as any).__userSearch = val; setAllProfiles([...allProfiles]); }
-          ];
-
           const now = new Date();
           const filteredUsers = allProfiles.filter((p: any) => {
-            // Type filter
             if (userTypeFilter !== 'all' && p.user_type !== userTypeFilter) return false;
-            // Time filter
             if (userTimeFilter !== 'all') {
               const joined = new Date(p.created_at);
               const hoursAgo = (now.getTime() - joined.getTime()) / (1000 * 60 * 60);
-              const hours = parseInt(userTimeFilter);
-              if (hoursAgo > hours) return false;
+              if (hoursAgo > parseInt(userTimeFilter)) return false;
             }
-            // Search
             if (userSearch) {
               const q = userSearch.toLowerCase();
-              const name = (p.full_name || '').toLowerCase();
-              const phone = (p.phone || '').toLowerCase();
-              if (!name.includes(q) && !phone.includes(q)) return false;
+              if (!(p.full_name || '').toLowerCase().includes(q) && !(p.phone || '').toLowerCase().includes(q)) return false;
             }
             return true;
           });
@@ -1601,7 +1582,6 @@ const AdminPanel = () => {
             <h2 className="text-xl font-bold text-foreground">{lang === 'ar' ? 'المستخدمين المسجلين' : 'Registered Users'}</h2>
             <p className="text-sm text-muted-foreground">{lang === 'ar' ? `${filteredUsers.length} من ${allProfiles.length} مستخدم` : `${filteredUsers.length} of ${allProfiles.length} users`}</p>
 
-            {/* Filters */}
             <div className="flex flex-wrap gap-3">
               <div className="relative flex-1 min-w-[180px]">
                 <Search className="absolute start-3 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -1674,18 +1654,15 @@ const AdminPanel = () => {
                                   ? `هل أنت متأكد من حذف المستخدم "${p.full_name || p.user_id}"؟ سيتم حذف جميع بياناته نهائياً.`
                                   : `Are you sure you want to permanently delete user "${p.full_name || p.user_id}"? All their data, bookings, and files will be removed.`;
                                 if (!window.confirm(confirmMsg)) return;
-
                                 const secondConfirm = lang === 'ar'
                                   ? 'تأكيد نهائي: هذا الإجراء لا يمكن التراجع عنه. متابعة؟'
                                   : 'Final confirmation: This action cannot be undone. Continue?';
                                 if (!window.confirm(secondConfirm)) return;
-
                                 try {
                                   toast.loading(lang === 'ar' ? 'جاري حذف المستخدم...' : 'Deleting user...', { id: 'delete-user' });
                                   const { data: { session } } = await supabase.auth.getSession();
                                   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
                                   const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
                                   const res = await fetch(`${supabaseUrl}/functions/v1/delete-user`, {
                                     method: 'POST',
                                     headers: {
@@ -1695,10 +1672,8 @@ const AdminPanel = () => {
                                     },
                                     body: JSON.stringify({ user_id: p.user_id }),
                                   });
-
                                   const result = await res.json();
                                   if (!res.ok) throw new Error(result.error || 'Failed to delete user');
-
                                   toast.success(
                                     lang === 'ar' ? 'تم حذف المستخدم بنجاح' : 'User deleted successfully',
                                     { id: 'delete-user', description: lang === 'ar' ? `تم حذف ${result.bunny_files_deleted} ملف` : `${result.bunny_files_deleted} files removed` }
@@ -1725,17 +1700,6 @@ const AdminPanel = () => {
           </div>
           );
         })()}
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Route Requests Tab */}
         {tab === 'route_requests' && (
