@@ -792,11 +792,18 @@ const DriverDashboard = () => {
                               {/* Delete button on card */}
                               <button
                                 onClick={() => deleteSchedule(slot.scheduleId)}
-                                className="px-3 sm:px-4 flex items-center justify-center gap-2 border-s border-border hover:bg-destructive/10 transition-colors text-destructive"
+                                className="px-2 flex items-center justify-center border-s border-border hover:bg-destructive/10 transition-colors text-destructive"
                                 title={lang === 'ar' ? 'حذف الرحلة' : 'Remove trip'}
                               >
                                 <Trash2 className="w-4 h-4" />
-                                <span className="hidden sm:inline text-xs font-medium">{lang === 'ar' ? 'حذف' : 'Remove'}</span>
+                              </button>
+                              {/* Go to trips page button */}
+                              <button
+                                onClick={() => setTab('trips')}
+                                className="px-2 flex items-center justify-center border-s border-border hover:bg-primary/10 transition-colors text-primary"
+                                title={lang === 'ar' ? 'افتح الرحلات' : 'Go to Trips'}
+                              >
+                                <ArrowRight className="w-4 h-4" />
                               </button>
                             </div>
                             {isExpanded && (
