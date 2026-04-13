@@ -819,23 +819,38 @@ const Dashboard = () => {
               <div className="space-y-2">
                 {rideInstances.map((ride) => (
                   <button key={ride.id} onClick={() => selectRide(ride)} className="w-full text-start bg-card border border-border rounded-xl p-4 hover:border-secondary/40 hover:shadow-card-hover transition-all">
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
-                        {ride.driver_profile?.avatar_url ? (<img src={ride.driver_profile.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover" />) : (<UserIcon className="w-5 h-5 text-primary" />)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-foreground text-sm truncate">{ride.driver_profile?.full_name || (lang === 'ar' ? 'سائق' : 'Driver')}</p>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground"><Car className="w-3 h-3" /><span>{ride.shuttle_info?.vehicle_model}</span></div>
-                        {driverRatings[ride.driver_id] && (
-                          <div className="flex items-center gap-1 text-xs mt-0.5">
-                            <Star className="w-3 h-3 fill-secondary text-secondary" />
-                            <span className="font-medium text-foreground">{driverRatings[ride.driver_id].avg.toFixed(1)}</span>
-                            <span className="text-muted-foreground">({driverRatings[ride.driver_id].count})</span>
+                    {ride._type === 'published' ? (
+                      <>
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="w-10 h-10 rounded-full bg-secondary/10 flex items-center justify-center shrink-0">
+                            <Car className="w-5 h-5 text-secondary" />
                           </div>
-                        )}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-foreground text-sm truncate">{lang === 'ar' ? (ride.routes?.name_ar || 'رحلة متاحة') : (ride.routes?.name_en || 'Available Trip')}</p>
+                            <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'احجز مقعدك الآن' : 'Book your seat now'}</p>
+                          </div>
+                          <div className="text-end"><span className="text-lg font-bold text-primary">{ride.routes?.price ?? '...'} EGP</span></div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
+                          {ride.driver_profile?.avatar_url ? (<img src={ride.driver_profile.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover" />) : (<UserIcon className="w-5 h-5 text-primary" />)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-foreground text-sm truncate">{ride.driver_profile?.full_name || (lang === 'ar' ? 'سائق' : 'Driver')}</p>
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground"><Car className="w-3 h-3" /><span>{ride.shuttle_info?.vehicle_model}</span></div>
+                          {driverRatings[ride.driver_id] && (
+                            <div className="flex items-center gap-1 text-xs mt-0.5">
+                              <Star className="w-3 h-3 fill-secondary text-secondary" />
+                              <span className="font-medium text-foreground">{driverRatings[ride.driver_id].avg.toFixed(1)}</span>
+                              <span className="text-muted-foreground">({driverRatings[ride.driver_id].count})</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-end"><span className="text-lg font-bold text-primary">{ride.routes?.price ?? '...'} EGP</span></div>
                       </div>
-                      <div className="text-end"><span className="text-lg font-bold text-primary">{ride.routes?.price ?? '...'} EGP</span></div>
-                    </div>
+                    )}
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
                       <MapPin className="w-3 h-3 text-green-500 shrink-0" />
                       <span className="flex-1 break-words">{ride.direction === 'return' ? (lang === 'ar' ? ride.routes?.destination_name_ar : ride.routes?.destination_name_en) : (lang === 'ar' ? ride.routes?.origin_name_ar : ride.routes?.origin_name_en)}</span>
@@ -846,7 +861,12 @@ const Dashboard = () => {
                     </div>
                     <div className="flex items-center gap-3 mt-2 text-xs">
                       <span className="flex items-center gap-1 text-muted-foreground"><Clock className="w-3 h-3" />{ride.departure_time?.slice(0, 5)}</span>
-                      <span className={`flex items-center gap-1 font-medium ${ride.available_seats <= 3 ? 'text-destructive' : 'text-green-600'}`}><Users className="w-3 h-3" />{ride.available_seats}/{ride.total_seats}</span>
+                      {ride._type !== 'published' && (
+                        <span className={`flex items-center gap-1 font-medium ${ride.available_seats <= 3 ? 'text-destructive' : 'text-green-600'}`}><Users className="w-3 h-3" />{ride.available_seats}/{ride.total_seats}</span>
+                      )}
+                      {ride._type === 'published' && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-secondary/10 text-secondary font-medium text-[10px]">{lang === 'ar' ? 'رحلة مخططة' : 'Planned Trip'}</span>
+                      )}
                       {ride.direction === 'return' && (<span className="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium text-[10px]">{lang === 'ar' ? 'عودة' : 'Return'}</span>)}
                     </div>
                   </button>
