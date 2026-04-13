@@ -256,6 +256,15 @@ const GlobalMap = () => {
       setShowConnectedRoutes(false);
       setConnectedDirections([]);
       setConnectedRouteInfo(null);
+      // Restore original positions
+      if (Object.keys(originalPositions).length > 0) {
+        setAllUsers(prev => prev.map(u => {
+          const orig = originalPositions[u.id];
+          if (orig) return { ...u, originLat: orig.oLat, originLng: orig.oLng, destinationLat: orig.dLat, destinationLng: orig.dLng };
+          return u;
+        }));
+        setOriginalPositions({});
+      }
       return;
     }
 
@@ -264,6 +273,11 @@ const GlobalMap = () => {
       toast({ title: 'Need at least 2 visible users', variant: 'destructive' });
       return;
     }
+
+    // Save original positions before allowing dragging
+    const positions: Record<string, { oLat: number; oLng: number; dLat: number; dLng: number }> = {};
+    users.forEach(u => { positions[u.id] = { oLat: u.originLat, oLng: u.originLng, dLat: u.destinationLat, dLng: u.destinationLng }; });
+    setOriginalPositions(positions);
 
     setLoadingRoutes(true);
     setShowConnectedRoutes(true);
