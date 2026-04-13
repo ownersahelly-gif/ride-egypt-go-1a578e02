@@ -99,6 +99,9 @@ const AdminPanel = () => {
     origin_lng: 31.2357, destination_lat: 30.0131, destination_lng: 31.2089,
     price: 25, estimated_duration_minutes: 30,
   });
+  const [mapsLink, setMapsLink] = useState('');
+  const [parsingLink, setParsingLink] = useState(false);
+  const [importedStops, setImportedStops] = useState<{ lat: number; lng: number; name: string }[]>([]);
 
   // Shuttle assignment
   const [assignForm, setAssignForm] = useState({ shuttle_id: '', route_id: '', driver_id: '' });
