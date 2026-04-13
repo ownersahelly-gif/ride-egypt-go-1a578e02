@@ -6,9 +6,9 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/integrations/supabase/client';
 import { formatTime12h } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { MapPin, Clock, Ticket, ChevronLeft, ChevronRight, MessageCircle, Navigation, Key, Star, Phone, Users, Timer, AlertCircle, Receipt, X, RotateCcw, Ban, Edit3 } from 'lucide-react';
+import { MapPin, Clock, Ticket, ChevronLeft, ChevronRight, MessageCircle, Navigation, Key, Star, Phone, Users, Timer, AlertCircle, Receipt, X, RotateCcw, Ban, Edit3, CheckCircle2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import MapPinPicker from '@/components/MapPinPicker';
+import MapView from '@/components/MapView';
 import RideChat from '@/components/RideChat';
 import RideRating from '@/components/RideRating';
 
@@ -41,9 +41,11 @@ const MyBookings = () => {
   const [receiptBooking, setReceiptBooking] = useState<any>(null);
   const [peerBookings, setPeerBookings] = useState<Record<string, any[]>>({});
   const [editingBooking, setEditingBooking] = useState<any>(null);
-  const [editingPin, setEditingPin] = useState<'origin' | 'destination' | null>(null);
-  const [editPickup, setEditPickup] = useState<{ lat: number; lng: number; name: string } | undefined>();
-  const [editDropoff, setEditDropoff] = useState<{ lat: number; lng: number; name: string } | undefined>();
+  const [editStops, setEditStops] = useState<any[]>([]);
+  const [editPickupMode, setEditPickupMode] = useState<'start' | 'stop'>('start');
+  const [editDropoffMode, setEditDropoffMode] = useState<'end' | 'stop'>('end');
+  const [editSelectedPickupStop, setEditSelectedPickupStop] = useState<any>(null);
+  const [editSelectedDropoffStop, setEditSelectedDropoffStop] = useState<any>(null);
   const [savingLocation, setSavingLocation] = useState(false);
 
   useEffect(() => {
@@ -481,11 +483,23 @@ const MyBookings = () => {
                         </div>
                       )}
                       {['confirmed', 'pending', 'quote_pending'].includes(booking.status) && !isExpired && (
-                        <Button variant="outline" size="sm" className="w-full mt-2" onClick={() => {
+                        <Button variant="outline" size="sm" className="w-full mt-2" onClick={async () => {
                           setEditingBooking(booking);
-                          setEditPickup(booking.custom_pickup_lat ? { lat: booking.custom_pickup_lat, lng: booking.custom_pickup_lng, name: booking.custom_pickup_name } : undefined);
-                          setEditDropoff(booking.custom_dropoff_lat ? { lat: booking.custom_dropoff_lat, lng: booking.custom_dropoff_lng, name: booking.custom_dropoff_name } : undefined);
-                          setEditingPin(null);
+                          // Fetch stops for this route
+                          if (booking.route_id) {
+                            const { data: stops } = await supabase.from('stops').select('*').eq('route_id', booking.route_id).order('stop_order');
+                            setEditStops(stops || []);
+                          }
+                          // Determine current mode from existing data
+                          const route = booking.routes;
+                          const isPickupAtOrigin = !booking.custom_pickup_lat || 
+                            (Math.abs(booking.custom_pickup_lat - route?.origin_lat) < 0.001 && Math.abs(booking.custom_pickup_lng - route?.origin_lng) < 0.001);
+                          const isDropoffAtDest = !booking.custom_dropoff_lat ||
+                            (Math.abs(booking.custom_dropoff_lat - route?.destination_lat) < 0.001 && Math.abs(booking.custom_dropoff_lng - route?.destination_lng) < 0.001);
+                          setEditPickupMode(isPickupAtOrigin ? 'start' : 'stop');
+                          setEditDropoffMode(isDropoffAtDest ? 'end' : 'stop');
+                          setEditSelectedPickupStop(null);
+                          setEditSelectedDropoffStop(null);
                         }}>
                           <Edit3 className="w-3.5 h-3.5 me-1" />
                           {lang === 'ar' ? 'تعديل الموقع' : 'Edit Location'}
@@ -705,95 +719,189 @@ const MyBookings = () => {
       )}
       
       {/* Edit Location Modal */}
-      {editingBooking && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-background">
-          <header className="bg-card border-b border-border shrink-0 safe-area-top">
-            <div className="flex items-center h-14 px-4 gap-3">
-              <Button variant="ghost" size="icon" onClick={() => { setEditingBooking(null); setEditingPin(null); }}>
-                <X className="w-5 h-5" />
-              </Button>
-              <h2 className="text-base font-bold text-foreground flex-1">
-                {lang === 'ar' ? 'تعديل موقع الركوب / النزول' : 'Edit Pickup / Dropoff'}
-              </h2>
-              {!editingPin && (
-                <Button size="sm" disabled={savingLocation} onClick={async () => {
-                  setSavingLocation(true);
-                  const updates: any = {};
-                  if (editPickup) {
-                    updates.custom_pickup_lat = editPickup.lat;
-                    updates.custom_pickup_lng = editPickup.lng;
-                    updates.custom_pickup_name = editPickup.name;
-                  }
-                  if (editDropoff) {
-                    updates.custom_dropoff_lat = editDropoff.lat;
-                    updates.custom_dropoff_lng = editDropoff.lng;
-                    updates.custom_dropoff_name = editDropoff.name;
-                  }
-                  const { error } = await supabase.from('bookings').update(updates).eq('id', editingBooking.id);
-                  if (error) {
-                    toast({ title: lang === 'ar' ? 'خطأ' : 'Error', description: error.message, variant: 'destructive' });
-                  } else {
-                    setBookings(prev => prev.map(b => b.id === editingBooking.id ? { ...b, ...updates } : b));
-                    toast({ title: lang === 'ar' ? 'تم تحديث الموقع' : 'Location updated' });
-                    setEditingBooking(null);
-                  }
-                  setSavingLocation(false);
-                }}>
+      {editingBooking && (() => {
+        const route = editingBooking.routes;
+        const pickupStops = editStops.filter((s: any) => s.stop_type === 'pickup' || s.stop_type === 'both');
+        const dropoffStops = editStops.filter((s: any) => s.stop_type === 'dropoff' || s.stop_type === 'both');
+
+        // Build map markers
+        const mapMarkers: { lat: number; lng: number; label?: string; color?: 'blue' | 'green' | 'orange' | 'purple' | 'red' }[] = [];
+        if (route) {
+          mapMarkers.push({ lat: route.origin_lat, lng: route.origin_lng, label: 'A', color: 'green' });
+          mapMarkers.push({ lat: route.destination_lat, lng: route.destination_lng, label: 'B', color: 'red' });
+        }
+        editStops.forEach((stop: any) => {
+          mapMarkers.push({ lat: stop.lat, lng: stop.lng, label: (stop.stop_order + 1).toString(), color: 'blue' });
+        });
+        if (editPickupMode === 'stop' && editSelectedPickupStop) {
+          mapMarkers.push({ lat: editSelectedPickupStop.lat, lng: editSelectedPickupStop.lng, label: '✓', color: 'green' });
+        }
+        if (editDropoffMode === 'stop' && editSelectedDropoffStop) {
+          mapMarkers.push({ lat: editSelectedDropoffStop.lat, lng: editSelectedDropoffStop.lng, label: '✓', color: 'red' });
+        }
+
+        const handleSave = async () => {
+          setSavingLocation(true);
+          const updates: any = {};
+          if (editPickupMode === 'start' && route) {
+            updates.custom_pickup_lat = route.origin_lat;
+            updates.custom_pickup_lng = route.origin_lng;
+            updates.custom_pickup_name = lang === 'ar' ? route.origin_name_ar : route.origin_name_en;
+          } else if (editPickupMode === 'stop' && editSelectedPickupStop) {
+            updates.custom_pickup_lat = editSelectedPickupStop.lat;
+            updates.custom_pickup_lng = editSelectedPickupStop.lng;
+            updates.custom_pickup_name = lang === 'ar' ? editSelectedPickupStop.name_ar : editSelectedPickupStop.name_en;
+          }
+          if (editDropoffMode === 'end' && route) {
+            updates.custom_dropoff_lat = route.destination_lat;
+            updates.custom_dropoff_lng = route.destination_lng;
+            updates.custom_dropoff_name = lang === 'ar' ? route.destination_name_ar : route.destination_name_en;
+          } else if (editDropoffMode === 'stop' && editSelectedDropoffStop) {
+            updates.custom_dropoff_lat = editSelectedDropoffStop.lat;
+            updates.custom_dropoff_lng = editSelectedDropoffStop.lng;
+            updates.custom_dropoff_name = lang === 'ar' ? editSelectedDropoffStop.name_ar : editSelectedDropoffStop.name_en;
+          }
+
+          if (Object.keys(updates).length === 0) {
+            setSavingLocation(false);
+            return;
+          }
+
+          const { error } = await supabase.from('bookings').update(updates).eq('id', editingBooking.id);
+          if (error) {
+            toast({ title: lang === 'ar' ? 'خطأ' : 'Error', description: error.message, variant: 'destructive' });
+          } else {
+            setBookings(prev => prev.map(b => b.id === editingBooking.id ? { ...b, ...updates } : b));
+            toast({ title: lang === 'ar' ? 'تم تحديث الموقع' : 'Location updated' });
+            setEditingBooking(null);
+          }
+          setSavingLocation(false);
+        };
+
+        const canSave = (editPickupMode === 'start' || !!editSelectedPickupStop) && (editDropoffMode === 'end' || !!editSelectedDropoffStop);
+
+        return (
+          <div className="fixed inset-0 z-50 flex flex-col bg-background">
+            <header className="bg-card border-b border-border shrink-0 safe-area-top">
+              <div className="flex items-center h-14 px-4 gap-3">
+                <Button variant="ghost" size="icon" onClick={() => setEditingBooking(null)}>
+                  <X className="w-5 h-5" />
+                </Button>
+                <h2 className="text-base font-bold text-foreground flex-1">
+                  {lang === 'ar' ? 'تعديل موقع الركوب / النزول' : 'Edit Pickup / Dropoff'}
+                </h2>
+                <Button size="sm" disabled={savingLocation || !canSave} onClick={handleSave}>
                   {savingLocation ? (lang === 'ar' ? 'جاري...' : 'Saving...') : (lang === 'ar' ? 'حفظ' : 'Save')}
                 </Button>
-              )}
-            </div>
-          </header>
+              </div>
+            </header>
 
-          {editingPin ? (
-            <div className="flex-1">
-              <MapPinPicker
-                activePin={editingPin}
-                origin={editPickup}
-                destination={editDropoff}
-                onConfirm={(type, loc) => {
-                  if (type === 'origin') setEditPickup(loc);
-                  else setEditDropoff(loc);
-                  setEditingPin(null);
-                }}
-                onCancel={() => setEditingPin(null)}
-              />
-            </div>
-          ) : (
+            {/* Map */}
+            {route && (
+              <div className="h-48 shrink-0">
+                <MapView
+                  origin={{ lat: route.origin_lat, lng: route.origin_lng }}
+                  destination={{ lat: route.destination_lat, lng: route.destination_lng }}
+                  markers={mapMarkers}
+                  className="h-full w-full"
+                />
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* Pickup */}
-              <div className="bg-card border border-border rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-green-600" />
-                    <span className="text-sm font-medium text-foreground">{lang === 'ar' ? 'نقطة الركوب' : 'Pickup Point'}</span>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => setEditingPin('origin')}>
-                    <Edit3 className="w-3.5 h-3.5 me-1" />
-                    {lang === 'ar' ? 'تغيير' : 'Change'}
-                  </Button>
+              {/* Pickup selector */}
+              <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+                <h3 className="font-semibold text-foreground flex items-center gap-1 text-sm">
+                  <MapPin className="w-4 h-4 text-green-500" />
+                  {lang === 'ar' ? 'نقطة الركوب' : 'Pickup'}
+                </h3>
+                <div className="flex gap-2">
+                  <button onClick={() => { setEditPickupMode('start'); setEditSelectedPickupStop(null); }}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${editPickupMode === 'start' ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}>
+                    {lang === 'ar' ? '🚏 نقطة الانطلاق' : '🚏 Starting Point'}
+                  </button>
+                  {pickupStops.length > 0 && (
+                    <button onClick={() => { setEditPickupMode('stop'); setEditSelectedPickupStop(null); }}
+                      className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${editPickupMode === 'stop' ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}>
+                      {lang === 'ar' ? '📍 نقطة توقف' : '📍 Bus Stop'}
+                    </button>
+                  )}
                 </div>
-                <p className="text-sm text-muted-foreground">{editPickup?.name || (lang === 'ar' ? 'غير محدد' : 'Not set')}</p>
+                {editPickupMode === 'start' && (
+                  <div className="flex items-center gap-2 text-sm p-3 rounded-lg bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <p className="font-medium text-xs">{lang === 'ar' ? route?.origin_name_ar : route?.origin_name_en}</p>
+                  </div>
+                )}
+                {editPickupMode === 'stop' && (
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {pickupStops.map((stop: any) => (
+                      <button key={stop.id} onClick={() => setEditSelectedPickupStop(stop)}
+                        className={`w-full text-start px-3 py-2 rounded-lg text-xs border transition-colors flex items-center gap-2 ${
+                          editSelectedPickupStop?.id === stop.id ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-foreground border-border hover:border-primary/50'
+                        }`}>
+                        <span className="shrink-0 w-5 h-5 rounded-full bg-primary/20 text-primary text-[10px] font-bold flex items-center justify-center">{stop.stop_order + 1}</span>
+                        <span className="truncate">{lang === 'ar' ? stop.name_ar : stop.name_en}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {editPickupMode === 'stop' && editSelectedPickupStop && (
+                  <div className="flex items-center gap-2 text-xs p-2 rounded-lg bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span className="font-medium">#{editSelectedPickupStop.stop_order + 1} {lang === 'ar' ? editSelectedPickupStop.name_ar : editSelectedPickupStop.name_en} ✓</span>
+                  </div>
+                )}
               </div>
 
-              {/* Dropoff */}
-              <div className="bg-card border border-border rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-red-500" />
-                    <span className="text-sm font-medium text-foreground">{lang === 'ar' ? 'نقطة النزول' : 'Dropoff Point'}</span>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => setEditingPin('destination')}>
-                    <Edit3 className="w-3.5 h-3.5 me-1" />
-                    {lang === 'ar' ? 'تغيير' : 'Change'}
-                  </Button>
+              {/* Dropoff selector */}
+              <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+                <h3 className="font-semibold text-foreground flex items-center gap-1 text-sm">
+                  <MapPin className="w-4 h-4 text-destructive" />
+                  {lang === 'ar' ? 'نقطة النزول' : 'Dropoff'}
+                </h3>
+                <div className="flex gap-2">
+                  <button onClick={() => { setEditDropoffMode('end'); setEditSelectedDropoffStop(null); }}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${editDropoffMode === 'end' ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}>
+                    {lang === 'ar' ? '🏁 نقطة الوصول' : '🏁 End Point'}
+                  </button>
+                  {dropoffStops.length > 0 && (
+                    <button onClick={() => { setEditDropoffMode('stop'); setEditSelectedDropoffStop(null); }}
+                      className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${editDropoffMode === 'stop' ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}>
+                      {lang === 'ar' ? '📍 نقطة توقف' : '📍 Bus Stop'}
+                    </button>
+                  )}
                 </div>
-                <p className="text-sm text-muted-foreground">{editDropoff?.name || (lang === 'ar' ? 'غير محدد' : 'Not set')}</p>
+                {editDropoffMode === 'end' && (
+                  <div className="flex items-center gap-2 text-sm p-3 rounded-lg bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <p className="font-medium text-xs">{lang === 'ar' ? route?.destination_name_ar : route?.destination_name_en}</p>
+                  </div>
+                )}
+                {editDropoffMode === 'stop' && (
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {dropoffStops.map((stop: any) => (
+                      <button key={stop.id} onClick={() => setEditSelectedDropoffStop(stop)}
+                        className={`w-full text-start px-3 py-2 rounded-lg text-xs border transition-colors flex items-center gap-2 ${
+                          editSelectedDropoffStop?.id === stop.id ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-foreground border-border hover:border-primary/50'
+                        }`}>
+                        <span className="shrink-0 w-5 h-5 rounded-full bg-primary/20 text-primary text-[10px] font-bold flex items-center justify-center">{stop.stop_order + 1}</span>
+                        <span className="truncate">{lang === 'ar' ? stop.name_ar : stop.name_en}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {editDropoffMode === 'stop' && editSelectedDropoffStop && (
+                  <div className="flex items-center gap-2 text-xs p-2 rounded-lg bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span className="font-medium">#{editSelectedDropoffStop.stop_order + 1} {lang === 'ar' ? editSelectedDropoffStop.name_ar : editSelectedDropoffStop.name_en} ✓</span>
+                  </div>
+                )}
               </div>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        );
+      })()}
       
       <BottomNav />
     </div>
