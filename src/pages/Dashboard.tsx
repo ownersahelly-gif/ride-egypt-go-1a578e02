@@ -443,12 +443,13 @@ const Dashboard = () => {
       if (tripDirection === 'both') {
         const goPrice = usingBundle ? 0 : basePrice;
         const returnPrice = usingBundle ? 0 : basePrice;
-        const commonFields = {
-          user_id: user.id, route_id: selectedRide.route_id, shuttle_id: selectedRide.shuttle_id,
-          seats: 1, scheduled_date: selectedRide.ride_date, scheduled_time: selectedRide.departure_time,
+        const commonFields: any = {
+          user_id: user.id, route_id: selectedRide.route_id,
+          seats: 1, scheduled_date: selectedRide.ride_date || selectedRide.trip_date, scheduled_time: selectedRide.departure_time,
           status: asWaitlist ? 'waitlist' : (usingBundle ? 'confirmed' : 'pending'),
           payment_proof_url: proofUrl, waitlist_position: waitlistPos,
         };
+        if (selectedRide.shuttle_id) commonFields.shuttle_id = selectedRide.shuttle_id;
         const { error: goErr } = await supabase.from('bookings').insert({
           ...commonFields, total_price: goPrice,
           custom_pickup_lat: pickupLat, custom_pickup_lng: pickupLng, custom_pickup_name: pickupName,
