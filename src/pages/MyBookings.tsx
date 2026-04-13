@@ -704,6 +704,97 @@ const MyBookings = () => {
         </div>
       )}
       
+      {/* Edit Location Modal */}
+      {editingBooking && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-background">
+          <header className="bg-card border-b border-border shrink-0 safe-area-top">
+            <div className="flex items-center h-14 px-4 gap-3">
+              <Button variant="ghost" size="icon" onClick={() => { setEditingBooking(null); setEditingPin(null); }}>
+                <X className="w-5 h-5" />
+              </Button>
+              <h2 className="text-base font-bold text-foreground flex-1">
+                {lang === 'ar' ? 'تعديل موقع الركوب / النزول' : 'Edit Pickup / Dropoff'}
+              </h2>
+              {!editingPin && (
+                <Button size="sm" disabled={savingLocation} onClick={async () => {
+                  setSavingLocation(true);
+                  const updates: any = {};
+                  if (editPickup) {
+                    updates.custom_pickup_lat = editPickup.lat;
+                    updates.custom_pickup_lng = editPickup.lng;
+                    updates.custom_pickup_name = editPickup.name;
+                  }
+                  if (editDropoff) {
+                    updates.custom_dropoff_lat = editDropoff.lat;
+                    updates.custom_dropoff_lng = editDropoff.lng;
+                    updates.custom_dropoff_name = editDropoff.name;
+                  }
+                  const { error } = await supabase.from('bookings').update(updates).eq('id', editingBooking.id);
+                  if (error) {
+                    toast({ title: lang === 'ar' ? 'خطأ' : 'Error', description: error.message, variant: 'destructive' });
+                  } else {
+                    setBookings(prev => prev.map(b => b.id === editingBooking.id ? { ...b, ...updates } : b));
+                    toast({ title: lang === 'ar' ? 'تم تحديث الموقع' : 'Location updated' });
+                    setEditingBooking(null);
+                  }
+                  setSavingLocation(false);
+                }}>
+                  {savingLocation ? (lang === 'ar' ? 'جاري...' : 'Saving...') : (lang === 'ar' ? 'حفظ' : 'Save')}
+                </Button>
+              )}
+            </div>
+          </header>
+
+          {editingPin ? (
+            <div className="flex-1">
+              <MapPinPicker
+                activePin={editingPin}
+                origin={editPickup}
+                destination={editDropoff}
+                onConfirm={(type, loc) => {
+                  if (type === 'origin') setEditPickup(loc);
+                  else setEditDropoff(loc);
+                  setEditingPin(null);
+                }}
+                onCancel={() => setEditingPin(null)}
+              />
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Pickup */}
+              <div className="bg-card border border-border rounded-xl p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-green-600" />
+                    <span className="text-sm font-medium text-foreground">{lang === 'ar' ? 'نقطة الركوب' : 'Pickup Point'}</span>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => setEditingPin('origin')}>
+                    <Edit3 className="w-3.5 h-3.5 me-1" />
+                    {lang === 'ar' ? 'تغيير' : 'Change'}
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">{editPickup?.name || (lang === 'ar' ? 'غير محدد' : 'Not set')}</p>
+              </div>
+
+              {/* Dropoff */}
+              <div className="bg-card border border-border rounded-xl p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-red-500" />
+                    <span className="text-sm font-medium text-foreground">{lang === 'ar' ? 'نقطة النزول' : 'Dropoff Point'}</span>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => setEditingPin('destination')}>
+                    <Edit3 className="w-3.5 h-3.5 me-1" />
+                    {lang === 'ar' ? 'تغيير' : 'Change'}
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">{editDropoff?.name || (lang === 'ar' ? 'غير محدد' : 'Not set')}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      
       <BottomNav />
     </div>
   );
