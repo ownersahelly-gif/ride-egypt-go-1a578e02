@@ -142,18 +142,27 @@ export interface GeneratedStop {
   name: string;
   userCount: number;
   userIds: string[];
+  stopType: 'pickup' | 'dropoff' | 'both';
 }
 
 export interface GeneratedRoute {
   origin: { lat: number; lng: number; name: string };
   destination: { lat: number; lng: number; name: string };
   stops: GeneratedStop[];
+  pickupStops: GeneratedStop[];
+  dropoffStops: GeneratedStop[];
   totalDistance: number;
   corridor: Corridor | null;
 }
 
 // ─── Grouping: destination-first ──────────────────────
 const DEST_THRESHOLD_KM = 8; // group destinations within 8km
+const ORIGIN_CLUSTER_KM = 3.5;
+const ORIGIN_PROGRESS_GAP = 0.14;
+const PICKUP_CLUSTER_KM = 0.1;
+const DROPOFF_CLUSTER_KM = 0.1;
+const MAX_WALK_TO_STOP_KM = 0.1;
+const MIN_CORRIDOR_COVERAGE = 0.6;
 
 export function smartGroupRequests(requests: RouteRequest[]): SmartGroup[] {
   // Dedupe: keep latest request per user
@@ -166,42 +175,17 @@ export function smartGroupRequests(requests: RouteRequest[]): SmartGroup[] {
   const unique = Object.values(latestByUser);
 
   // Cluster by destination first
-  const assigned = new Set<string>();
-  const destGroups: RouteRequest[][] = [];
+  const destGroups = clusterRequestsByDestination(unique);
 
-  unique.forEach(rr => {
-    if (assigned.has(rr.user_id)) return;
-    const group = [rr];
-    assigned.add(rr.user_id);
-    unique.forEach(other => {
-      if (assigned.has(other.user_id)) return;
-      if (haversine(rr.destination_lat, rr.destination_lng, other.destination_lat, other.destination_lng) < DEST_THRESHOLD_KM) {
-        group.push(other);
-        assigned.add(other.user_id);
-      }
-    });
-    destGroups.push(group);
-  });
-
-  // For each destination group, find best corridor and build SmartGroup
-  const smartGroups: SmartGroup[] = destGroups.map(group => {
+  // For each destination group, split out far origin clusters and build SmartGroup
+  const smartGroups: SmartGroup[] = destGroups.flatMap(group => {
     const corridor = findBestCorridor(group);
-    // Origin label = most common origin area
-    const originCounts: Record<string, number> = {};
-    group.forEach(rr => {
-      const zone = getZoneName(rr.origin_lat, rr.origin_lng, rr.origin_name);
-      originCounts[zone] = (originCounts[zone] || 0) + 1;
+    return splitDestinationGroupByOrigin(group, corridor).map(subgroup => {
+      const subgroupCorridor = findBestCorridor(subgroup);
+      const originLabel = getMostCommonLabel(subgroup, 'origin');
+      const destLabel = getMostCommonLabel(subgroup, 'destination');
+      return { requests: subgroup, originLabel, destLabel, corridor: subgroupCorridor };
     });
-    const originLabel = Object.entries(originCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || group[0].origin_name;
-
-    const destCounts: Record<string, number> = {};
-    group.forEach(rr => {
-      const zone = getZoneName(rr.destination_lat, rr.destination_lng, rr.destination_name);
-      destCounts[zone] = (destCounts[zone] || 0) + 1;
-    });
-    const destLabel = Object.entries(destCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || group[0].destination_name;
-
-    return { requests: group, originLabel, destLabel, corridor };
   });
 
   smartGroups.sort((a, b) => b.requests.length - a.requests.length);
@@ -209,17 +193,15 @@ export function smartGroupRequests(requests: RouteRequest[]): SmartGroup[] {
 }
 
 // ─── Corridor matching ────────────────────────────────
-const MAX_CORRIDOR_DIST_KM = 5; // user must be within 5km of the corridor path
+const MAX_CORRIDOR_DIST_KM = 2.5; // keep corridors realistic, not broad detours
 
 function findBestCorridor(group: RouteRequest[]): Corridor | null {
   let bestCorridor: Corridor | null = null;
   let bestScore = Infinity;
+  let bestCoverage = 0;
 
   for (const corridor of CAIRO_CORRIDORS) {
     const wps = corridor.waypoints;
-    // Check if corridor endpoints cover the group's origin/dest zone
-    const firstWp = wps[0];
-    const lastWp = wps[wps.length - 1];
 
     let totalDist = 0;
     let usersOnCorridor = 0;
@@ -235,13 +217,17 @@ function findBestCorridor(group: RouteRequest[]): Corridor | null {
 
     if (usersOnCorridor === 0) continue;
     // Score: prefer corridors that serve more users with less deviation
+    const coverage = usersOnCorridor / group.length;
     const score = (group.length - usersOnCorridor) * 100 + totalDist / usersOnCorridor;
-    if (score < bestScore) {
+    if (coverage > bestCoverage || (coverage === bestCoverage && score < bestScore)) {
       bestScore = score;
+      bestCoverage = coverage;
       bestCorridor = corridor;
     }
   }
 
+  if (!bestCorridor) return null;
+  if (group.length > 1 && bestCoverage < MIN_CORRIDOR_COVERAGE) return null;
   return bestCorridor;
 }
 
@@ -298,112 +284,48 @@ function getZoneName(lat: number, lng: number, fallback: string): string {
 }
 
 // ─── Stop generation ──────────────────────────────────
-const STOP_CLUSTER_KM = 1.5; // combine users within 1.5km into one stop
-
 export function generateSmartRoute(group: SmartGroup): GeneratedRoute {
-  const { requests, corridor } = group;
+  const { requests } = group;
+  const corridor = group.corridor && group.corridor.waypoints.length >= 2 ? group.corridor : null;
+  const totalCorridorLen = corridor ? corridorLength(corridor.waypoints) : 0;
+  const forwardDirection = corridor ? getForwardDirection(requests, corridor, totalCorridorLen) : true;
 
-  if (!corridor || corridor.waypoints.length < 2) {
+  const pickupStops = buildPickupStops(requests, corridor, totalCorridorLen, forwardDirection);
+  const dropoffStops = buildDropoffStops(
+    requests,
+    corridor,
+    totalCorridorLen,
+    forwardDirection,
+    pickupStops[pickupStops.length - 1] || null,
+  );
+
+  if (pickupStops.length === 0 || dropoffStops.length === 0) {
     return generateFallbackRoute(group);
   }
 
-  const wps = corridor.waypoints;
+  const origin = {
+    lat: pickupStops[0].lat,
+    lng: pickupStops[0].lng,
+    name: pickupStops[0].name,
+  };
+  const destination = {
+    lat: dropoffStops[dropoffStops.length - 1].lat,
+    lng: dropoffStops[dropoffStops.length - 1].lng,
+    name: dropoffStops[dropoffStops.length - 1].name,
+  };
 
-  // Snap each user's origin to the corridor
-  interface SnappedUser {
-    userId: string;
-    origLat: number; origLng: number; origName: string;
-    snappedLat: number; snappedLng: number;
-    corridorProgress: number; // 0..1 along the corridor
-  }
-
-  const totalCorridorLen = corridorLength(wps);
-  const snappedUsers: SnappedUser[] = [];
-
-  for (const rr of requests) {
-    const snap = snapToCorridor(rr.origin_lat, rr.origin_lng, wps);
-    const dist = minDistToCorridor(rr.origin_lat, rr.origin_lng, wps);
-    // Skip users too far from corridor (>5km), assign them to nearest stop later
-    const progress = segmentProgress(snap.segIndex, snap.t, wps, totalCorridorLen);
-    snappedUsers.push({
-      userId: rr.user_id,
-      origLat: rr.origin_lat, origLng: rr.origin_lng, origName: rr.origin_name,
-      snappedLat: snap.lat, snappedLng: snap.lng,
-      corridorProgress: progress,
-    });
-  }
-
-  // Sort by progress along corridor
-  snappedUsers.sort((a, b) => a.corridorProgress - b.corridorProgress);
-
-  // Cluster snapped points into stops
-  const stops: GeneratedStop[] = [];
-  const used = new Set<number>();
-
-  for (let i = 0; i < snappedUsers.length; i++) {
-    if (used.has(i)) continue;
-    used.add(i);
-    const cluster = [snappedUsers[i]];
-
-    for (let j = i + 1; j < snappedUsers.length; j++) {
-      if (used.has(j)) continue;
-      if (haversine(snappedUsers[i].snappedLat, snappedUsers[i].snappedLng, snappedUsers[j].snappedLat, snappedUsers[j].snappedLng) < STOP_CLUSTER_KM) {
-        cluster.push(snappedUsers[j]);
-        used.add(j);
-      }
-    }
-
-    // Stop location = nearest corridor waypoint to cluster center (use main road names)
-    const avgLat = cluster.reduce((s, u) => s + u.snappedLat, 0) / cluster.length;
-    const avgLng = cluster.reduce((s, u) => s + u.snappedLng, 0) / cluster.length;
-    const nearestWp = findNearestWaypoint(avgLat, avgLng, wps);
-
-    // Use zone name or corridor waypoint name
-    const stopName = getZoneName(nearestWp.lat, nearestWp.lng, nearestWp.name);
-
-    stops.push({
-      lat: nearestWp.lat,
-      lng: nearestWp.lng,
-      name: stopName,
-      userCount: cluster.length,
-      userIds: cluster.map(u => u.userId),
-    });
-  }
-
-  // Dedupe stops that ended up at the same waypoint
-  const dedupedStops: GeneratedStop[] = [];
-  stops.forEach(s => {
-    const existing = dedupedStops.find(ds => haversine(ds.lat, ds.lng, s.lat, s.lng) < 0.3);
-    if (existing) {
-      existing.userCount += s.userCount;
-      existing.userIds.push(...s.userIds);
-    } else {
-      dedupedStops.push({ ...s });
-    }
-  });
-
-  // Sort stops by corridor order
-  dedupedStops.sort((a, b) => {
-    const pa = snapToCorridor(a.lat, a.lng, wps);
-    const pb = snapToCorridor(b.lat, b.lng, wps);
-    return segmentProgress(pa.segIndex, pa.t, wps, totalCorridorLen) -
-           segmentProgress(pb.segIndex, pb.t, wps, totalCorridorLen);
-  });
-
-  // Origin = first corridor waypoint near users, Destination = last
-  const origin = { lat: wps[0].lat, lng: wps[0].lng, name: getZoneName(wps[0].lat, wps[0].lng, wps[0].name) };
-  const dest = { lat: wps[wps.length - 1].lat, lng: wps[wps.length - 1].lng, name: getZoneName(wps[wps.length - 1].lat, wps[wps.length - 1].lng, wps[wps.length - 1].name) };
-
-  // Remove stops that overlap with origin/destination
-  const finalStops = dedupedStops.filter(s =>
-    haversine(s.lat, s.lng, origin.lat, origin.lng) > 1 &&
-    haversine(s.lat, s.lng, dest.lat, dest.lng) > 1
-  );
+  const intermediateStops = [
+    ...pickupStops.slice(1),
+    ...dropoffStops.slice(0, -1),
+  ];
 
   return {
-    origin, destination: dest,
-    stops: finalStops,
-    totalDistance: corridorLength(wps),
+    origin,
+    destination,
+    stops: intermediateStops,
+    pickupStops,
+    dropoffStops,
+    totalDistance: routeDistance([origin, ...intermediateStops, destination]),
     corridor,
   };
 }
@@ -411,55 +333,356 @@ export function generateSmartRoute(group: SmartGroup): GeneratedRoute {
 // Fallback for groups with no matching corridor
 function generateFallbackRoute(group: SmartGroup): GeneratedRoute {
   const reqs = group.requests;
-  const avgOrigLat = reqs.reduce((s, r) => s + r.origin_lat, 0) / reqs.length;
-  const avgOrigLng = reqs.reduce((s, r) => s + r.origin_lng, 0) / reqs.length;
-  const avgDestLat = reqs.reduce((s, r) => s + r.destination_lat, 0) / reqs.length;
-  const avgDestLng = reqs.reduce((s, r) => s + r.destination_lng, 0) / reqs.length;
+  const pickupStops = buildPickupStops(reqs, null, 0, true);
+  const dropoffStops = buildDropoffStops(reqs, null, 0, true, pickupStops[pickupStops.length - 1] || null);
+
+  if (pickupStops.length === 0 || dropoffStops.length === 0) {
+    const fallbackOrigin = reqs[0]
+      ? { lat: reqs[0].origin_lat, lng: reqs[0].origin_lng, name: reqs[0].origin_name }
+      : { lat: 30.0444, lng: 31.2357, name: 'Cairo' };
+    const fallbackDestination = reqs[0]
+      ? { lat: reqs[0].destination_lat, lng: reqs[0].destination_lng, name: reqs[0].destination_name }
+      : { lat: 30.0444, lng: 31.2357, name: 'Cairo' };
+
+    return {
+      origin: fallbackOrigin,
+      destination: fallbackDestination,
+      stops: [],
+      pickupStops: pickupStops,
+      dropoffStops: dropoffStops,
+      totalDistance: haversine(fallbackOrigin.lat, fallbackOrigin.lng, fallbackDestination.lat, fallbackDestination.lng),
+      corridor: null,
+    };
+  }
 
   const origin = {
-    lat: avgOrigLat, lng: avgOrigLng,
-    name: getZoneName(avgOrigLat, avgOrigLng, reqs[0].origin_name),
+    lat: pickupStops[0].lat,
+    lng: pickupStops[0].lng,
+    name: pickupStops[0].name,
   };
-  const dest = {
-    lat: avgDestLat, lng: avgDestLng,
-    name: getZoneName(avgDestLat, avgDestLng, reqs[0].destination_name),
+  const destination = {
+    lat: dropoffStops[dropoffStops.length - 1].lat,
+    lng: dropoffStops[dropoffStops.length - 1].lng,
+    name: dropoffStops[dropoffStops.length - 1].name,
   };
-
-  // Cluster user origins into stops
-  const stops: GeneratedStop[] = [];
-  const used = new Set<string>();
-  reqs.forEach(rr => {
-    if (used.has(rr.user_id)) return;
-    used.add(rr.user_id);
-    const cluster = [rr];
-    reqs.forEach(other => {
-      if (used.has(other.user_id)) return;
-      if (haversine(rr.origin_lat, rr.origin_lng, other.origin_lat, other.origin_lng) < STOP_CLUSTER_KM) {
-        cluster.push(other);
-        used.add(other.user_id);
-      }
-    });
-    const lat = cluster.reduce((s, r) => s + r.origin_lat, 0) / cluster.length;
-    const lng = cluster.reduce((s, r) => s + r.origin_lng, 0) / cluster.length;
-    stops.push({
-      lat, lng,
-      name: getZoneName(lat, lng, cluster[0].origin_name),
-      userCount: cluster.length,
-      userIds: cluster.map(r => r.user_id),
-    });
-  });
-
-  stops.sort((a, b) => haversine(origin.lat, origin.lng, a.lat, a.lng) - haversine(origin.lat, origin.lng, b.lat, b.lng));
+  const intermediateStops = [
+    ...pickupStops.slice(1),
+    ...dropoffStops.slice(0, -1),
+  ];
 
   return {
-    origin, destination: dest,
-    stops: stops.filter(s => haversine(s.lat, s.lng, origin.lat, origin.lng) > 1 && haversine(s.lat, s.lng, dest.lat, dest.lng) > 1),
-    totalDistance: haversine(origin.lat, origin.lng, dest.lat, dest.lng),
+    origin,
+    destination,
+    stops: intermediateStops,
+    pickupStops,
+    dropoffStops,
+    totalDistance: routeDistance([origin, ...intermediateStops, destination]),
     corridor: null,
   };
 }
 
 // ─── Helpers ──────────────────────────────────────────
+function clusterRequestsByDestination(requests: RouteRequest[]): RouteRequest[][] {
+  const assigned = new Set<string>();
+  const clusters: RouteRequest[][] = [];
+
+  for (const seed of requests) {
+    if (assigned.has(seed.user_id)) continue;
+    const cluster: RouteRequest[] = [];
+    const queue = [seed];
+    assigned.add(seed.user_id);
+
+    while (queue.length) {
+      const current = queue.shift()!;
+      cluster.push(current);
+
+      for (const other of requests) {
+        if (assigned.has(other.user_id)) continue;
+        if (haversine(current.destination_lat, current.destination_lng, other.destination_lat, other.destination_lng) <= DEST_THRESHOLD_KM) {
+          assigned.add(other.user_id);
+          queue.push(other);
+        }
+      }
+    }
+
+    clusters.push(cluster);
+  }
+
+  return clusters;
+}
+
+function splitDestinationGroupByOrigin(group: RouteRequest[], corridor: Corridor | null): RouteRequest[][] {
+  if (group.length <= 1) return [group];
+
+  const totalLen = corridor ? corridorLength(corridor.waypoints) : 0;
+  const enriched = group.map(rr => {
+    const snap = corridor ? snapToCorridor(rr.origin_lat, rr.origin_lng, corridor.waypoints) : null;
+    return {
+      request: rr,
+      zone: getZoneName(rr.origin_lat, rr.origin_lng, rr.origin_name),
+      corridorDist: corridor ? minDistToCorridor(rr.origin_lat, rr.origin_lng, corridor.waypoints) : Infinity,
+      progress: corridor && snap ? segmentProgress(snap.segIndex, snap.t, corridor.waypoints, totalLen) : 0,
+    };
+  });
+
+  const taken = new Set<string>();
+  const clusters: RouteRequest[][] = [];
+
+  for (const seed of enriched) {
+    if (taken.has(seed.request.user_id)) continue;
+    const cluster: RouteRequest[] = [];
+    const queue = [seed];
+    taken.add(seed.request.user_id);
+
+    while (queue.length) {
+      const current = queue.shift()!;
+      cluster.push(current.request);
+
+      for (const other of enriched) {
+        if (taken.has(other.request.user_id)) continue;
+        if (shouldShareShuttleCluster(current, other, corridor)) {
+          taken.add(other.request.user_id);
+          queue.push(other);
+        }
+      }
+    }
+
+    clusters.push(cluster);
+  }
+
+  return clusters;
+}
+
+function shouldShareShuttleCluster(
+  a: { request: RouteRequest; zone: string; corridorDist: number; progress: number },
+  b: { request: RouteRequest; zone: string; corridorDist: number; progress: number },
+  corridor: Corridor | null,
+): boolean {
+  if (a.zone === b.zone) return true;
+
+  const directOriginDistance = haversine(
+    a.request.origin_lat,
+    a.request.origin_lng,
+    b.request.origin_lat,
+    b.request.origin_lng,
+  );
+  if (directOriginDistance <= ORIGIN_CLUSTER_KM) return true;
+
+  if (!corridor) return false;
+
+  const nearCorridor = a.corridorDist <= MAX_CORRIDOR_DIST_KM && b.corridorDist <= MAX_CORRIDOR_DIST_KM;
+  const progressGap = Math.abs(a.progress - b.progress);
+
+  return nearCorridor && progressGap <= ORIGIN_PROGRESS_GAP;
+}
+
+function getMostCommonLabel(group: RouteRequest[], kind: 'origin' | 'destination'): string {
+  const counts: Record<string, number> = {};
+  group.forEach(rr => {
+    const zone = kind === 'origin'
+      ? getZoneName(rr.origin_lat, rr.origin_lng, rr.origin_name)
+      : getZoneName(rr.destination_lat, rr.destination_lng, rr.destination_name);
+    counts[zone] = (counts[zone] || 0) + 1;
+  });
+  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0]
+    || (kind === 'origin' ? group[0]?.origin_name : group[0]?.destination_name)
+    || 'Route';
+}
+
+function getForwardDirection(requests: RouteRequest[], corridor: Corridor, totalLen: number): boolean {
+  const avgPickupProgress = average(
+    requests.map(rr => {
+      const snap = snapToCorridor(rr.origin_lat, rr.origin_lng, corridor.waypoints);
+      return segmentProgress(snap.segIndex, snap.t, corridor.waypoints, totalLen);
+    })
+  );
+  const avgDropoffProgress = average(
+    requests.map(rr => {
+      const snap = snapToCorridor(rr.destination_lat, rr.destination_lng, corridor.waypoints);
+      return segmentProgress(snap.segIndex, snap.t, corridor.waypoints, totalLen);
+    })
+  );
+  return avgDropoffProgress >= avgPickupProgress;
+}
+
+type RequestPoint = {
+  userId: string;
+  lat: number;
+  lng: number;
+  name: string;
+};
+
+function buildPickupStops(
+  requests: RouteRequest[],
+  corridor: Corridor | null,
+  totalCorridorLen: number,
+  forwardDirection: boolean,
+): GeneratedStop[] {
+  const points: RequestPoint[] = requests.map(rr => ({
+    userId: rr.user_id,
+    lat: rr.origin_lat,
+    lng: rr.origin_lng,
+    name: rr.origin_name,
+  }));
+
+  const stops = clusterRequestPoints(points, PICKUP_CLUSTER_KM, 'pickup', corridor, totalCorridorLen);
+
+  if (corridor) {
+    return sortStopsAlongCorridor(stops, corridor, totalCorridorLen, forwardDirection);
+  }
+
+  const avgDestination = {
+    lat: average(requests.map(rr => rr.destination_lat)),
+    lng: average(requests.map(rr => rr.destination_lng)),
+  };
+
+  return [...stops].sort((a, b) =>
+    haversine(avgDestination.lat, avgDestination.lng, b.lat, b.lng) -
+    haversine(avgDestination.lat, avgDestination.lng, a.lat, a.lng)
+  );
+}
+
+function buildDropoffStops(
+  requests: RouteRequest[],
+  corridor: Corridor | null,
+  totalCorridorLen: number,
+  forwardDirection: boolean,
+  previousStop: { lat: number; lng: number } | null,
+): GeneratedStop[] {
+  const points: RequestPoint[] = requests.map(rr => ({
+    userId: rr.user_id,
+    lat: rr.destination_lat,
+    lng: rr.destination_lng,
+    name: rr.destination_name,
+  }));
+
+  const stops = clusterRequestPoints(points, DROPOFF_CLUSTER_KM, 'dropoff', corridor, totalCorridorLen);
+
+  if (corridor) {
+    return sortStopsAlongCorridor(stops, corridor, totalCorridorLen, forwardDirection);
+  }
+
+  return sortStopsByNearestNeighbor(stops, previousStop);
+}
+
+function clusterRequestPoints(
+  points: RequestPoint[],
+  thresholdKm: number,
+  stopType: 'pickup' | 'dropoff',
+  corridor: Corridor | null,
+  totalCorridorLen: number,
+): GeneratedStop[] {
+  if (points.length === 0) return [];
+
+  const used = new Set<number>();
+  const stops: GeneratedStop[] = [];
+
+  for (let i = 0; i < points.length; i++) {
+    if (used.has(i)) continue;
+    const clusterIndexes = [i];
+    used.add(i);
+
+    for (let j = i + 1; j < points.length; j++) {
+      if (used.has(j)) continue;
+      if (haversine(points[i].lat, points[i].lng, points[j].lat, points[j].lng) <= thresholdKm) {
+        clusterIndexes.push(j);
+        used.add(j);
+      }
+    }
+
+    const cluster = clusterIndexes.map(index => points[index]);
+    const avgLat = average(cluster.map(point => point.lat));
+    const avgLng = average(cluster.map(point => point.lng));
+    const displayedPoint = corridor
+      ? getWalkableCorridorPoint(avgLat, avgLng, corridor.waypoints)
+      : { lat: avgLat, lng: avgLng };
+
+    const fallbackName = mostCommonName(cluster.map(point => point.name));
+    const name = cluster.length === 1
+      ? cluster[0].name
+      : getZoneName(displayedPoint.lat, displayedPoint.lng, fallbackName);
+
+    stops.push({
+      lat: displayedPoint.lat,
+      lng: displayedPoint.lng,
+      name,
+      userCount: cluster.length,
+      userIds: cluster.map(point => point.userId),
+      stopType,
+    });
+  }
+
+  return dedupeStops(stops, thresholdKm / 2);
+}
+
+function getWalkableCorridorPoint(lat: number, lng: number, waypoints: Waypoint[]): { lat: number; lng: number } {
+  const snapped = snapToCorridor(lat, lng, waypoints);
+  const walkDistance = haversine(lat, lng, snapped.lat, snapped.lng);
+  if (walkDistance <= MAX_WALK_TO_STOP_KM) {
+    return { lat: snapped.lat, lng: snapped.lng };
+  }
+  return { lat, lng };
+}
+
+function sortStopsAlongCorridor(
+  stops: GeneratedStop[],
+  corridor: Corridor,
+  totalCorridorLen: number,
+  forwardDirection: boolean,
+): GeneratedStop[] {
+  return [...stops].sort((a, b) => {
+    const aSnap = snapToCorridor(a.lat, a.lng, corridor.waypoints);
+    const bSnap = snapToCorridor(b.lat, b.lng, corridor.waypoints);
+    const aProgress = segmentProgress(aSnap.segIndex, aSnap.t, corridor.waypoints, totalCorridorLen);
+    const bProgress = segmentProgress(bSnap.segIndex, bSnap.t, corridor.waypoints, totalCorridorLen);
+    return forwardDirection ? aProgress - bProgress : bProgress - aProgress;
+  });
+}
+
+function sortStopsByNearestNeighbor(stops: GeneratedStop[], start: { lat: number; lng: number } | null): GeneratedStop[] {
+  if (stops.length <= 1 || !start) return stops;
+
+  const remaining = [...stops];
+  const ordered: GeneratedStop[] = [];
+  let current = start;
+
+  while (remaining.length) {
+    let bestIndex = 0;
+    let bestDistance = haversine(current.lat, current.lng, remaining[0].lat, remaining[0].lng);
+
+    for (let i = 1; i < remaining.length; i++) {
+      const distance = haversine(current.lat, current.lng, remaining[i].lat, remaining[i].lng);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = i;
+      }
+    }
+
+    const [nextStop] = remaining.splice(bestIndex, 1);
+    ordered.push(nextStop);
+    current = nextStop;
+  }
+
+  return ordered;
+}
+
+function dedupeStops(stops: GeneratedStop[], thresholdKm: number): GeneratedStop[] {
+  const deduped: GeneratedStop[] = [];
+
+  stops.forEach(stop => {
+    const existing = deduped.find(candidate => candidate.stopType === stop.stopType && haversine(candidate.lat, candidate.lng, stop.lat, stop.lng) <= thresholdKm);
+    if (!existing) {
+      deduped.push({ ...stop });
+      return;
+    }
+
+    existing.userCount += stop.userCount;
+    existing.userIds = Array.from(new Set([...existing.userIds, ...stop.userIds]));
+  });
+
+  return deduped;
+}
+
 function corridorLength(wps: Waypoint[]): number {
   let d = 0;
   for (let i = 0; i < wps.length - 1; i++) d += haversine(wps[i].lat, wps[i].lng, wps[i + 1].lat, wps[i + 1].lng);
@@ -481,4 +704,24 @@ function findNearestWaypoint(lat: number, lng: number, wps: Waypoint[]): Waypoin
     if (d < bestDist) { best = wps[i]; bestDist = d; }
   }
   return best;
+}
+
+function routeDistance(points: { lat: number; lng: number }[]): number {
+  let total = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    total += haversine(points[i].lat, points[i].lng, points[i + 1].lat, points[i + 1].lng);
+  }
+  return total;
+}
+
+function average(values: number[]): number {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+}
+
+function mostCommonName(names: string[]): string {
+  const counts: Record<string, number> = {};
+  names.forEach(name => {
+    counts[name] = (counts[name] || 0) + 1;
+  });
+  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || names[0] || 'Stop';
 }
