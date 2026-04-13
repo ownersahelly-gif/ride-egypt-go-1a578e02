@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow, Polyline, DirectionsRenderer, Circle } from '@react-google-maps/api';
 import { supabase } from '@/integrations/supabase/client';
@@ -11,7 +11,7 @@ import {
   type RouteRequestUser, type FilterState, type RouteStop, type CircleZone,
   deduplicateRequests, isInRadius, ZONE_COLORS,
 } from '@/components/global-map/types';
-import { Loader2, EyeOff } from 'lucide-react';
+import { Loader2, EyeOff, Save } from 'lucide-react';
 
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 const cairoCenter = { lat: 30.0444, lng: 31.2357 };
@@ -54,6 +54,7 @@ const GlobalMap = () => {
   const [routeNameAr, setRouteNameAr] = useState('');
   const [price, setPrice] = useState('');
   const [saving, setSaving] = useState(false);
+  const [savingConnectedRoute, setSavingConnectedRoute] = useState(false);
 
   // Fetch data
   useEffect(() => {
@@ -133,6 +134,22 @@ const GlobalMap = () => {
 
     return true;
   });
+
+  // Hourly distribution (all non-hidden users, ignoring time filter)
+  const hourlyDistribution = useMemo(() => {
+    const counts: Record<number, number> = {};
+    for (let h = 0; h < 24; h++) counts[h] = 0;
+    allUsers.forEach(u => {
+      if (hiddenUserIds.has(u.id)) return;
+      if (zoneFilteredIds !== null && !zoneFilteredIds.has(u.id)) return;
+      if (filters.days.length > 0 && (u.preferredDays.length === 0 || !filters.days.some(d => u.preferredDays.includes(d)))) return;
+      if (u.preferredTime) {
+        const hour = parseInt(u.preferredTime.split(':')[0], 10);
+        if (!isNaN(hour)) counts[hour]++;
+      }
+    });
+    return Object.entries(counts).map(([h, count]) => ({ hour: Number(h), count }));
+  }, [allUsers, hiddenUserIds, zoneFilteredIds, filters.days]);
 
   // Map click handler
   const handleMapClick = useCallback(async (e: google.maps.MapMouseEvent) => {
@@ -374,6 +391,102 @@ const GlobalMap = () => {
     setPrice('');
   };
 
+  // Save connected route to route management
+  const handleSaveConnectedRoute = async () => {
+    if (connectedDirections.length === 0) return;
+    setSavingConnectedRoute(true);
+    try {
+      // Extract start and end from the connected directions
+      const pickupRoute = connectedDirections[0];
+      const lastRoute = connectedDirections[connectedDirections.length - 1];
+      const startLeg = pickupRoute?.routes[0]?.legs?.[0];
+      const lastLegs = lastRoute?.routes[0]?.legs;
+      const endLeg = lastLegs?.[lastLegs.length - 1];
+
+      const originName = startLeg?.start_address || 'Start';
+      const destName = endLeg?.end_address || 'End';
+      const originLat = startLeg?.start_location?.lat() || 0;
+      const originLng = startLeg?.start_location?.lng() || 0;
+      const destLat = endLeg?.end_location?.lat() || 0;
+      const destLng = endLeg?.end_location?.lng() || 0;
+
+      // Collect all waypoints as stops (all pickups then all dropoffs)
+      const users = filteredUsers.slice(0, 25);
+      const allStops: { name: string; lat: number; lng: number; type: string }[] = [];
+
+      // Pickup stops from optimized order
+      const pickupLegs = pickupRoute?.routes[0]?.legs || [];
+      pickupLegs.forEach((leg, i) => {
+        if (i === 0) {
+          allStops.push({ name: leg.start_address || `Pickup ${i+1}`, lat: leg.start_location.lat(), lng: leg.start_location.lng(), type: 'pickup' });
+        }
+        allStops.push({ name: leg.end_address || `Pickup ${i+2}`, lat: leg.end_location.lat(), lng: leg.end_location.lng(), type: 'pickup' });
+      });
+
+      // Dropoff stops from optimized order
+      const dropoffRoute = connectedDirections.length >= 3 ? connectedDirections[2] : connectedDirections.length >= 2 ? connectedDirections[1] : null;
+      const dropoffLegs = dropoffRoute?.routes[0]?.legs || [];
+      dropoffLegs.forEach((leg, i) => {
+        if (i === 0) {
+          allStops.push({ name: leg.start_address || `Dropoff ${i+1}`, lat: leg.start_location.lat(), lng: leg.start_location.lng(), type: 'dropoff' });
+        }
+        allStops.push({ name: leg.end_address || `Dropoff ${i+2}`, lat: leg.end_location.lat(), lng: leg.end_location.lng(), type: 'dropoff' });
+      });
+
+      // Deduplicate stops by proximity
+      const uniqueStops: typeof allStops = [];
+      allStops.forEach(s => {
+        const exists = uniqueStops.some(e => Math.abs(e.lat - s.lat) < 0.001 && Math.abs(e.lng - s.lng) < 0.001);
+        if (!exists) uniqueStops.push(s);
+      });
+
+      // Calculate total distance/duration
+      let totalDur = 0;
+      connectedDirections.forEach(dir => {
+        dir.routes[0]?.legs?.forEach(l => { totalDur += l.duration?.value || 0; });
+      });
+
+      const routeName = `${originName.split(',')[0]} → ${destName.split(',')[0]}`;
+      const { data: routeData, error: routeErr } = await supabase.from('routes').insert({
+        name_en: routeName,
+        name_ar: routeName,
+        origin_name_en: originName,
+        origin_name_ar: originName,
+        origin_lat: originLat,
+        origin_lng: originLng,
+        destination_name_en: destName,
+        destination_name_ar: destName,
+        destination_lat: destLat,
+        destination_lng: destLng,
+        price: 0,
+        estimated_duration_minutes: Math.round(totalDur / 60),
+        status: 'active',
+      }).select().single();
+
+      if (routeErr) throw routeErr;
+
+      if (uniqueStops.length > 0 && routeData) {
+        const stopsInsert = uniqueStops.map((s, i) => ({
+          route_id: routeData.id,
+          name_en: s.name.split(',').slice(0, 2).join(','),
+          name_ar: s.name.split(',').slice(0, 2).join(','),
+          lat: s.lat,
+          lng: s.lng,
+          stop_order: i + 1,
+          stop_type: s.type as 'pickup' | 'dropoff' | 'both',
+        }));
+        await supabase.from('stops').insert(stopsInsert);
+      }
+
+      toast({ title: 'Route saved!', description: `${routeName} with ${uniqueStops.length} stops` });
+      navigate('/admin');
+    } catch (err: any) {
+      toast({ title: 'Save failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setSavingConnectedRoute(false);
+    }
+  };
+
   const handleAssignUser = (userId: string, stopId: string) => {
     setRouteStops(prev => prev.map(s => {
       if (s.id === stopId) {
@@ -464,6 +577,10 @@ const GlobalMap = () => {
         addingCircleType={addingCircleType}
         addingCirclePairId={addingCirclePairId}
         onCancelAdding={() => { setAddingCircleType(null); setAddingCirclePairId(''); }}
+        hourlyDistribution={hourlyDistribution}
+        canSaveConnectedRoute={showConnectedRoutes && connectedDirections.length > 0}
+        onSaveConnectedRoute={handleSaveConnectedRoute}
+        savingConnectedRoute={savingConnectedRoute}
       />
 
       <UserSidebar
@@ -618,6 +735,41 @@ const GlobalMap = () => {
             }}
           />
         ))}
+
+        {/* Connected route start/end markers */}
+        {showConnectedRoutes && connectedDirections.length > 0 && (() => {
+          const firstRoute = connectedDirections[0];
+          const lastRoute = connectedDirections[connectedDirections.length - 1];
+          const startLoc = firstRoute?.routes[0]?.legs?.[0]?.start_location;
+          const lastLegs = lastRoute?.routes[0]?.legs;
+          const endLoc = lastLegs?.[lastLegs.length - 1]?.end_location;
+          return (
+            <>
+              {startLoc && (
+                <Marker
+                  position={{ lat: startLoc.lat(), lng: startLoc.lng() }}
+                  icon={{
+                    url: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="18" fill="#22c55e" stroke="white" stroke-width="3"/><text x="20" y="26" text-anchor="middle" fill="white" font-size="16" font-weight="bold" font-family="Arial">S</text></svg>`)}`,
+                    scaledSize: new google.maps.Size(40, 40),
+                    anchor: new google.maps.Point(20, 20),
+                  }}
+                  zIndex={100}
+                />
+              )}
+              {endLoc && (
+                <Marker
+                  position={{ lat: endLoc.lat(), lng: endLoc.lng() }}
+                  icon={{
+                    url: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="18" fill="#ef4444" stroke="white" stroke-width="3"/><text x="20" y="26" text-anchor="middle" fill="white" font-size="16" font-weight="bold" font-family="Arial">E</text></svg>`)}`,
+                    scaledSize: new google.maps.Size(40, 40),
+                    anchor: new google.maps.Point(20, 20),
+                  }}
+                  zIndex={100}
+                />
+              )}
+            </>
+          );
+        })()}
 
         {/* Generated route */}
         {generatedRoute && (
