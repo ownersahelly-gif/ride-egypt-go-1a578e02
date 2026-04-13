@@ -714,6 +714,14 @@ const GlobalMap = () => {
         commonDaysActive={!!filters.commonDaysOnly}
         zonesLocked={zonesLocked}
         onToggleZonesLocked={() => setZonesLocked(l => !l)}
+        allUsers={allUsers}
+        onCreateZonePair={(pickup, dropoff) => {
+          setCircleZones(prev => [
+            ...prev,
+            { ...pickup, id: crypto.randomUUID() },
+            { ...dropoff, id: crypto.randomUUID() },
+          ]);
+        }}
       />
 
       <UserSidebar

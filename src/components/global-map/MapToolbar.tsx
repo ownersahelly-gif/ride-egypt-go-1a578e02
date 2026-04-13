@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
-import { ChevronLeft, Route, Layers, Filter, X, Plus, Trash2, MapPin, Circle, Save, ExternalLink, Users, Lock, Unlock } from 'lucide-react';
+import { ChevronLeft, Route, Layers, Filter, X, Plus, Trash2, MapPin, Circle, Save, ExternalLink, Users, Lock, Unlock, Wand2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { type FilterState, type CircleZone, ZONE_COLORS, AREA_PRESETS } from './types';
+import { type FilterState, type CircleZone, type RouteRequestUser, ZONE_COLORS, AREA_PRESETS } from './types';
+import ZoneRecommender from './ZoneRecommender';
 
 interface MapToolbarProps {
   filters: FilterState;
@@ -39,6 +40,8 @@ interface MapToolbarProps {
   commonDaysActive: boolean;
   zonesLocked: boolean;
   onToggleZonesLocked: () => void;
+  allUsers: RouteRequestUser[];
+  onCreateZonePair: (pickup: Omit<CircleZone, 'id'>, dropoff: Omit<CircleZone, 'id'>) => void;
 }
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -56,9 +59,11 @@ const MapToolbar = ({
   hourlyDistribution, canSaveConnectedRoute, onSaveConnectedRoute, savingConnectedRoute,
   onOpenInGoogleMaps, onFilterCommonDays, commonDaysActive,
   zonesLocked, onToggleZonesLocked,
+  allUsers, onCreateZonePair,
 }: MapToolbarProps) => {
   const [newPairName, setNewPairName] = useState('');
   const [showZones, setShowZones] = useState(false);
+  const [showRecommender, setShowRecommender] = useState(false);
 
   const toggleDay = (d: number) => {
     const days = filters.days.includes(d) ? filters.days.filter(x => x !== d) : [...filters.days, d];
@@ -222,6 +227,34 @@ const MapToolbar = ({
       {/* Zone management panel */}
       {showZones && (
         <div className="px-3 pb-3 border-t border-border pt-2 space-y-3 max-h-[300px] overflow-y-auto">
+          {/* Toggle between manual and AI recommendation */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant={showRecommender ? 'outline' : 'secondary'}
+              size="sm"
+              className="h-7 text-xs flex-1"
+              onClick={() => setShowRecommender(false)}
+            >
+              Manual
+            </Button>
+            <Button
+              variant={showRecommender ? 'secondary' : 'outline'}
+              size="sm"
+              className="h-7 text-xs flex-1 gap-1"
+              onClick={() => setShowRecommender(true)}
+            >
+              <Wand2 className="w-3 h-3" /> Recommend
+            </Button>
+          </div>
+
+          {showRecommender ? (
+            <ZoneRecommender
+              users={allUsers}
+              onCreateZonePair={onCreateZonePair}
+              onClose={() => setShowRecommender(false)}
+            />
+          ) : (
+          <>
           <div className="flex items-center gap-2">
             <Input
               className="h-7 text-xs flex-1"
@@ -337,6 +370,8 @@ const MapToolbar = ({
             <p className="text-xs text-muted-foreground text-center py-2">
               Create a zone pair to filter by pickup and dropoff areas. Each pair links a pickup circle to a dropoff circle.
             </p>
+          )}
+          </>
           )}
         </div>
       )}
