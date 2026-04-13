@@ -1,73 +1,114 @@
 
 
-## Plan: Admin-Configurable Content, Chat Badges & Push Notification Prep
+# Global Map — Transportation Operations System
 
-### Goal
-1. Make more frontend content admin-editable (avoid App Store re-reviews)
-2. Add unread message badge on chat icons
-3. Prepare for push notifications
+## Summary
+Build a full-screen, admin-only map operations page (`/admin/global-map`) accessible via a "Global Map" button on the Route Request page. This system visualizes all route requests on an interactive Google Map with filtering, area selection, manual route building, and route generation capabilities.
 
----
+## Data Source
+All data comes from the existing `route_requests` table joined with `profiles` for user info (name, phone). The table already has: origin/destination coords+names, preferred_time, preferred_days, user_id, status.
 
-### Part 1: More Admin-Configurable Content
+## Implementation Plan
 
-Add new keys to the `app_settings` table that the admin can edit, so these don't require app updates:
+### Step 1: Create the GlobalMap page (`src/pages/GlobalMap.tsx`)
+A large, complex page with these sections:
 
-- **Hero section text** (title, subtitle in EN/AR)
-- **Contact info** (phone, email, social links)
-- **Announcement banner** (optional text shown at top of dashboard)
-- **Feature toggles** (enable/disable carpool, packages, etc.)
+**Top toolbar:**
+- Back button to admin/route-requests
+- Filter controls (time range, days, area preset dropdown)
+- Toggle buttons: Show Lines, Show Clusters
+- "Generate Route" button
+- "Show Connected Routes" / "Hide Routes" toggle
 
-**Files to change:**
-- `src/pages/AdminPanel.tsx` — Add a "Content" or "Customization" section with fields for each setting
-- `src/hooks/useAppSettings.ts` — New hook to fetch all `app_settings` in one call and cache them
-- Landing page components (`HeroSection`, `Footer`, etc.) — Use dynamic values instead of hardcoded text
+**Full-screen Google Map (main area):**
+- Uses `@react-google-maps/api` (already installed)
+- Pickup markers (green) and dropoff markers (red) for each route request
+- InfoWindow on click showing: name, phone, pickup, dropoff, time, days
+- Smart deduplication: group by user_id + similar origin/dest coords, merge days
 
----
+**Left sidebar (collapsible):**
+- User list with filters applied
+- Hidden users list
+- Route builder panel (start, end, stops, assigned users)
 
-### Part 2: Unread Message Badge on Chat Icons
+### Step 2: Smart Deduplication Logic
+- Group route_requests by user_id + origin/destination proximity (within ~200m)
+- Merge preferred_days arrays
+- Display single marker pair per unique user-route
 
-Show a red dot/count on the chat (MessageCircle) button when there are unread messages for a booking.
+### Step 3: Filtering System
+- Time range picker (two time inputs)
+- Day-of-week checkboxes
+- Area presets (New Cairo, Maadi, Smart Village, etc.) with configurable radius
+- Radius slider (1-20km, default 5km)
+- Filter applies to both pickup and dropoff independently
 
-**Approach:**
-- Add an `is_read` boolean column to `ride_messages` table (default `false`)
-- When the chat is opened, mark messages as read
-- Query unread count per booking to show badge
+### Step 4: Area Selection Tools
+- Drawing manager integration (circle + polygon)
+- Actions on selected area: show/hide users, use as pickup/dropoff filter
+- Multiple zone support with color coding
 
-**Files to change:**
-- **Migration** — Add `is_read` column to `ride_messages`
-- `src/components/RideChat.tsx` — On open, mark incoming messages as read
-- `src/pages/ActiveRide.tsx` — Fetch unread counts, show red dot on MessageCircle button
-- `src/pages/MyBookings.tsx` — Same badge logic for passenger side
-- `src/pages/DriverDashboard.tsx` — Same badge logic for driver side
+### Step 5: Map Visualization Controls
+- Toggle pickup→dropoff dashed lines
+- MarkerClusterer for zoom-out clustering
+- Expand details on zoom-in
 
----
+### Step 6: Manual Route Builder
+- Click map to set start/end points
+- Add stops by clicking map or dragging
+- Stops are draggable, reorderable via sidebar list
+- Show nearby users per stop (within configurable radius)
+- Manual user assignment to stops
 
-### Part 3: Push Notifications (Prep)
+### Step 7: Hide/Exclude Control
+- Select users or draw area → "Hide" button
+- Hidden users stored in component state
+- Hidden users excluded from all operations and visualization
 
-True push notifications (when app is closed) require:
-- **Firebase Cloud Messaging (FCM)** for Android
-- **Apple Push Notification Service (APNs)** for iOS
-- A Supabase Edge Function to send pushes when a new message is inserted
+### Step 8: Smart Route Generation
+- Select start + end → "Generate Route"
+- Use Google Directions API with waypoints (visible users' pickups/dropoffs)
+- Optimize waypoint order (`optimizeWaypoints: true`)
+- Filter users near the generated path only
+- Show total distance + ETA
+- Snap stops to real road points
 
-This is a larger setup. For now, we can:
-1. Add a `device_tokens` table to store user push tokens
-2. Add the Capacitor Push Notifications plugin registration code
-3. Create an edge function that sends push via FCM when a ride_message is inserted
+### Step 9: Global Route Visualization
+- "Show Connected Routes": draw Directions API routes for all visible users (pickup→dropoff)
+- "Hide Routes": clear all route polylines, keep markers
 
-**Note:** Full push notification setup requires Firebase project credentials (FCM server key) and APNs certificate. I'll scaffold the code and tell you what credentials to add.
+### Step 10: Save Route
+- Save generated route to the existing `routes` table + `stops` table
+- Include start, end, ordered stops, assigned users, time, distance, ETA
+- Navigate to route management after save
 
----
+### Step 11: Wire up routing
+- Add `/admin/global-map` route in `App.tsx` (protected)
+- Add "Global Map" button at top of Route Request page and in admin route_requests tab
 
-### Summary of Changes
+## Technical Details
 
-| Area | What | Effort |
-|------|------|--------|
-| Admin content | Add editable hero text, contact info, announcements, feature toggles | Medium |
-| Chat badge | Add `is_read` column, show unread dot on chat icons | Small |
-| Push notifications | Scaffold device token storage + edge function | Medium |
+**New files:**
+- `src/pages/GlobalMap.tsx` — main page (~800-1200 lines)
+- `src/components/global-map/MapToolbar.tsx` — filter bar
+- `src/components/global-map/UserSidebar.tsx` — user list + route builder
+- `src/components/global-map/RouteBuilder.tsx` — stop management panel
 
-**Database changes:** 2 migrations (add `is_read` to ride_messages, create `device_tokens` table)
-**New files:** `useAppSettings.ts` hook, `push-notification` edge function
-**Modified files:** AdminPanel, ActiveRide, MyBookings, DriverDashboard, RideChat, landing components
+**Dependencies:** Uses existing `@react-google-maps/api`. Will add `@googlemaps/markerclusterer` for clustering.
+
+**Google Maps APIs used:**
+- Maps JavaScript API (already configured)
+- Directions API (already used in MapView)
+- Drawing Manager (circles/polygons)
+- Geometry library (distance calculations)
+
+**No database changes needed** — reads from existing `route_requests`, `profiles`, `routes`, `stops` tables.
+
+## Phased Delivery
+Given the scope, this will be built incrementally:
+1. Base map with all route request markers + info windows + deduplication
+2. Filtering (time, days, area) + hide/exclude
+3. Area selection tools (drawing)
+4. Manual route builder + user assignment
+5. Route generation with Directions API + save
 
