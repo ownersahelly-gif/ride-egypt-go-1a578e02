@@ -26,7 +26,6 @@ function findCluster(
 ): ClusterResult | null {
   if (users.length === 0) return null;
 
-  // Step 1: Find centroid
   let sumLat = 0, sumLng = 0;
   users.forEach(u => {
     const c = getCoords(u);
@@ -36,17 +35,14 @@ function findCluster(
   let centerLat = sumLat / users.length;
   let centerLng = sumLng / users.length;
 
-  // Step 2: Sort users by distance to centroid
   const withDist = users.map(u => {
     const c = getCoords(u);
     return { user: u, dist: getDistance(c.lat, c.lng, centerLat, centerLng) };
   }).sort((a, b) => a.dist - b.dist);
 
-  // Step 3: Take the closest N users (target count)
   const count = Math.min(targetCount, withDist.length);
   const selected = withDist.slice(0, count);
 
-  // Step 4: Re-center on selected users for tighter fit
   sumLat = 0; sumLng = 0;
   selected.forEach(s => {
     const c = getCoords(s.user);
@@ -56,7 +52,6 @@ function findCluster(
   centerLat = sumLat / selected.length;
   centerLng = sumLng / selected.length;
 
-  // Step 5: Calculate radius to encompass all selected users
   let maxDist = 0;
   selected.forEach(s => {
     const c = getCoords(s.user);
@@ -64,9 +59,7 @@ function findCluster(
     if (d > maxDist) maxDist = d;
   });
 
-  let radius = maxDist + 500; // Add 500m buffer
-
-  // Step 6: Apply max km constraint
+  let radius = maxDist + 500;
   if (maxKm && radius > maxKm * 1000) {
     radius = maxKm * 1000;
   }
@@ -79,9 +72,81 @@ function findCluster(
   };
 }
 
+/** Calculate real driving route stats via Google Directions API */
+async function calculateRealRouteStats(
+  users: RouteRequestUser[]
+): Promise<{ distanceKm: number; durationMin: number } | null> {
+  if (users.length < 2 || typeof google === 'undefined') return null;
+
+  const ds = new google.maps.DirectionsService();
+  let totalDist = 0;
+  let totalDur = 0;
+
+  try {
+    // Pickup chain
+    const pickups = users.map(u => ({ lat: u.originLat, lng: u.originLng }));
+    if (pickups.length >= 2) {
+      const result = await ds.route({
+        origin: new google.maps.LatLng(pickups[0].lat, pickups[0].lng),
+        destination: new google.maps.LatLng(pickups[pickups.length - 1].lat, pickups[pickups.length - 1].lng),
+        waypoints: pickups.slice(1, -1).slice(0, 23).map(p => ({
+          location: new google.maps.LatLng(p.lat, p.lng),
+          stopover: true,
+        })),
+        optimizeWaypoints: true,
+        travelMode: google.maps.TravelMode.DRIVING,
+      });
+      result.routes[0]?.legs?.forEach(l => {
+        totalDist += l.distance?.value || 0;
+        totalDur += l.duration?.value || 0;
+      });
+    }
+
+    // Dropoff chain
+    const dropoffs = users.map(u => ({ lat: u.destinationLat, lng: u.destinationLng }));
+    if (dropoffs.length >= 2) {
+      const result = await ds.route({
+        origin: new google.maps.LatLng(dropoffs[0].lat, dropoffs[0].lng),
+        destination: new google.maps.LatLng(dropoffs[dropoffs.length - 1].lat, dropoffs[dropoffs.length - 1].lng),
+        waypoints: dropoffs.slice(1, -1).slice(0, 23).map(p => ({
+          location: new google.maps.LatLng(p.lat, p.lng),
+          stopover: true,
+        })),
+        optimizeWaypoints: true,
+        travelMode: google.maps.TravelMode.DRIVING,
+      });
+      result.routes[0]?.legs?.forEach(l => {
+        totalDist += l.distance?.value || 0;
+        totalDur += l.duration?.value || 0;
+      });
+    }
+
+    // Bridge between last pickup and first dropoff
+    if (pickups.length >= 1 && dropoffs.length >= 1) {
+      const bridgeResult = await ds.route({
+        origin: new google.maps.LatLng(pickups[pickups.length - 1].lat, pickups[pickups.length - 1].lng),
+        destination: new google.maps.LatLng(dropoffs[0].lat, dropoffs[0].lng),
+        travelMode: google.maps.TravelMode.DRIVING,
+      });
+      bridgeResult.routes[0]?.legs?.forEach(l => {
+        totalDist += l.distance?.value || 0;
+        totalDur += l.duration?.value || 0;
+      });
+    }
+  } catch (e) {
+    console.error('Route stats calculation failed:', e);
+    return null;
+  }
+
+  return {
+    distanceKm: totalDist / 1000,
+    durationMin: Math.round(totalDur / 60),
+  };
+}
+
 const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderProps) => {
   const [targetPeople, setTargetPeople] = useState(10);
-  const [maxTripKm, setMaxTripKm] = useState(50);
+  const [maxTripMin, setMaxTripMin] = useState(90);
   const [maxPickupRadiusKm, setMaxPickupRadiusKm] = useState(15);
   const [maxDropoffRadiusKm, setMaxDropoffRadiusKm] = useState(15);
   const [pairName, setPairName] = useState('');
@@ -89,11 +154,14 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
   const [preview, setPreview] = useState<{
     pickup: ClusterResult;
     dropoff: ClusterResult;
-    avgTripKm: number;
+    routeDistanceKm: number;
+    routeDurationMin: number;
+    userCount: number;
   } | null>(null);
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     setGenerating(true);
+    setPreview(null);
 
     // Find pickup cluster
     const pickupCluster = findCluster(
@@ -108,21 +176,12 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
       return;
     }
 
-    // Get users in pickup cluster
     const clusterUsers = users.filter(u => pickupCluster.userIds.includes(u.id));
 
-    // Filter by max trip distance
-    const tripFiltered = clusterUsers.filter(u => {
-      const tripDist = getDistance(u.originLat, u.originLng, u.destinationLat, u.destinationLng);
-      return tripDist <= maxTripKm * 1000;
-    });
-
-    const finalUsers = tripFiltered.length >= 2 ? tripFiltered : clusterUsers;
-
-    // Find dropoff cluster for those users
+    // Find dropoff cluster
     const dropoffCluster = findCluster(
-      finalUsers,
-      finalUsers.length,
+      clusterUsers,
+      clusterUsers.length,
       u => ({ lat: u.destinationLat, lng: u.destinationLng }),
       maxDropoffRadiusKm
     );
@@ -132,23 +191,79 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
       return;
     }
 
-    // Calculate average trip distance
-    let totalTripDist = 0;
-    finalUsers.forEach(u => {
-      totalTripDist += getDistance(u.originLat, u.originLng, u.destinationLat, u.destinationLng);
-    });
-    const avgTripKm = totalTripDist / finalUsers.length / 1000;
+    // Calculate real driving route stats
+    const routeStats = await calculateRealRouteStats(clusterUsers);
 
-    // Update pickup cluster to only include final users
-    pickupCluster.userIds = finalUsers.map(u => u.id);
+    if (routeStats) {
+      // If route exceeds max time, try reducing people
+      if (routeStats.durationMin > maxTripMin && clusterUsers.length > 2) {
+        // Iteratively reduce users until duration fits
+        let bestUsers = clusterUsers;
+        for (let reduce = 1; reduce < clusterUsers.length - 1; reduce++) {
+          const fewer = clusterUsers.length - reduce;
+          const smallerPickup = findCluster(
+            users,
+            fewer,
+            u => ({ lat: u.originLat, lng: u.originLng }),
+            maxPickupRadiusKm
+          );
+          if (!smallerPickup || smallerPickup.userIds.length < 2) break;
 
-    setPreview({ pickup: pickupCluster, dropoff: dropoffCluster, avgTripKm });
+          const smallerUsers = users.filter(u => smallerPickup.userIds.includes(u.id));
+          const smallerStats = await calculateRealRouteStats(smallerUsers);
+
+          if (smallerStats && smallerStats.durationMin <= maxTripMin) {
+            bestUsers = smallerUsers;
+
+            const newPickup = findCluster(bestUsers, bestUsers.length, u => ({ lat: u.originLat, lng: u.originLng }), maxPickupRadiusKm);
+            const newDropoff = findCluster(bestUsers, bestUsers.length, u => ({ lat: u.destinationLat, lng: u.destinationLng }), maxDropoffRadiusKm);
+
+            if (newPickup && newDropoff) {
+              setPreview({
+                pickup: newPickup,
+                dropoff: newDropoff,
+                routeDistanceKm: smallerStats.distanceKm,
+                routeDurationMin: smallerStats.durationMin,
+                userCount: bestUsers.length,
+              });
+            }
+            setGenerating(false);
+            return;
+          }
+        }
+      }
+
+      // Show result (even if over time limit, with warning)
+      pickupCluster.userIds = clusterUsers.map(u => u.id);
+      setPreview({
+        pickup: pickupCluster,
+        dropoff: dropoffCluster,
+        routeDistanceKm: routeStats.distanceKm,
+        routeDurationMin: routeStats.durationMin,
+        userCount: clusterUsers.length,
+      });
+    } else {
+      // Fallback to straight-line estimate
+      let totalDist = 0;
+      clusterUsers.forEach(u => {
+        totalDist += getDistance(u.originLat, u.originLng, u.destinationLat, u.destinationLng);
+      });
+      pickupCluster.userIds = clusterUsers.map(u => u.id);
+      setPreview({
+        pickup: pickupCluster,
+        dropoff: dropoffCluster,
+        routeDistanceKm: totalDist / clusterUsers.length / 1000,
+        routeDurationMin: 0,
+        userCount: clusterUsers.length,
+      });
+    }
+
     setGenerating(false);
   };
 
   const handleApply = () => {
     if (!preview) return;
-    const name = pairName.trim() || `Auto ${preview.pickup.userIds.length}p`;
+    const name = pairName.trim() || `Auto ${preview.userCount}p`;
     const pairId = crypto.randomUUID().slice(0, 8);
 
     onCreateZonePair(
@@ -171,6 +286,8 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
     );
     onClose();
   };
+
+  const overTime = preview && preview.routeDurationMin > maxTripMin;
 
   return (
     <div className="space-y-3">
@@ -196,6 +313,22 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
           max={Math.min(users.length, 50)}
           step={1}
           onValueChange={([v]) => { setTargetPeople(v); setPreview(null); }}
+          className="w-full"
+        />
+      </div>
+
+      {/* Max trip duration - PRIMARY constraint */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-muted-foreground font-bold">⏱️ Max trip duration</span>
+          <span className="text-[10px] font-bold text-foreground">{maxTripMin} min</span>
+        </div>
+        <Slider
+          value={[maxTripMin]}
+          min={15}
+          max={180}
+          step={5}
+          onValueChange={([v]) => { setMaxTripMin(v); setPreview(null); }}
           className="w-full"
         />
       </div>
@@ -232,22 +365,6 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
         />
       </div>
 
-      {/* Max trip distance */}
-      <div className="space-y-1">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] text-muted-foreground">Max trip distance</span>
-          <span className="text-[10px] font-bold text-foreground">{maxTripKm} km</span>
-        </div>
-        <Slider
-          value={[maxTripKm]}
-          min={5}
-          max={100}
-          step={5}
-          onValueChange={([v]) => { setMaxTripKm(v); setPreview(null); }}
-          className="w-full"
-        />
-      </div>
-
       {/* Pair name */}
       <Input
         className="h-7 text-xs"
@@ -264,21 +381,33 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
         disabled={generating || users.length < 2}
       >
         {generating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-        Find Best Zone
+        {generating ? 'Calculating real routes...' : 'Find Best Zone'}
       </Button>
 
       {/* Preview results */}
       {preview && (
-        <div className="bg-muted/30 rounded-lg p-2 space-y-1.5 border border-border">
-          <div className="text-[10px] font-bold text-foreground">Recommendation</div>
+        <div className={`rounded-lg p-2 space-y-1.5 border ${overTime ? 'bg-destructive/10 border-destructive/30' : 'bg-muted/30 border-border'}`}>
+          <div className="text-[10px] font-bold text-foreground">
+            {overTime ? '⚠️ Closest fit (exceeds time limit)' : '✅ Recommendation'}
+          </div>
           <div className="grid grid-cols-2 gap-2 text-[10px]">
             <div>
               <span className="text-muted-foreground">People: </span>
-              <span className="font-bold text-foreground">{preview.pickup.userIds.length}</span>
+              <span className="font-bold text-foreground">{preview.userCount}</span>
             </div>
             <div>
-              <span className="text-muted-foreground">Avg trip: </span>
-              <span className="font-bold text-foreground">{preview.avgTripKm.toFixed(1)} km</span>
+              <span className="text-muted-foreground">Route: </span>
+              <span className="font-bold text-foreground">{preview.routeDistanceKm.toFixed(1)} km</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Duration: </span>
+              <span className={`font-bold ${overTime ? 'text-destructive' : 'text-foreground'}`}>
+                {preview.routeDurationMin} min
+              </span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Max: </span>
+              <span className="font-bold text-foreground">{maxTripMin} min</span>
             </div>
             <div>
               <span className="text-muted-foreground">PU radius: </span>
@@ -289,6 +418,11 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
               <span className="font-bold text-foreground">{(preview.dropoff.radius / 1000).toFixed(1)} km</span>
             </div>
           </div>
+          {overTime && (
+            <p className="text-[9px] text-destructive">
+              Could not find {targetPeople} people within {maxTripMin} min. Try increasing time or reducing people.
+            </p>
+          )}
           <Button size="sm" className="w-full gap-1 text-xs mt-1" onClick={handleApply}>
             Apply Zone Pair
           </Button>
@@ -296,7 +430,7 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
       )}
 
       <p className="text-[9px] text-muted-foreground">
-        Finds the densest cluster of {targetPeople} people, then creates a matching pickup + dropoff zone pair.
+        Uses Google Maps driving directions to calculate real route distance and duration — matches Show Routes exactly.
       </p>
     </div>
   );
