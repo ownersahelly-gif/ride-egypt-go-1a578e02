@@ -668,10 +668,33 @@ const AdminPanel = () => {
   };
 
   const deleteStop = async (stopId: string, routeId: string) => {
+    // Get stop data before deleting (for paired route sync)
+    const stopToDelete = (routeStopsMap[routeId] || []).find(s => s.id === stopId);
+    
     const { error } = await supabase.from('stops').delete().eq('id', stopId);
     if (error) toast.error(error.message);
     else {
       toast.success(lang === 'ar' ? 'تم حذف نقطة التوقف' : 'Stop deleted');
+      
+      // Sync delete to paired route
+      const pairedRouteId = findPairedRouteId(routeId);
+      if (pairedRouteId && stopToDelete) {
+        const { data: pairedStops } = await supabase.from('stops').select('*').eq('route_id', pairedRouteId).order('stop_order');
+        const matchingStop = pairedStops?.find(s => s.name_en === stopToDelete.name_en && s.name_ar === stopToDelete.name_ar);
+        if (matchingStop) {
+          await supabase.from('stops').delete().eq('id', matchingStop.id);
+          // Re-order paired route stops
+          const pairedRemaining = (pairedStops || []).filter(s => s.id !== matchingStop.id);
+          for (let i = 0; i < pairedRemaining.length; i++) {
+            if (pairedRemaining[i].stop_order !== i) {
+              await supabase.from('stops').update({ stop_order: i }).eq('id', pairedRemaining[i].id);
+            }
+          }
+          await fetchStopsForRoute(pairedRouteId);
+          toast.info(lang === 'ar' ? 'تم حذف المحطة من المسار المعاكس أيضاً' : 'Stop also deleted from paired route');
+        }
+      }
+      
       // Re-order remaining stops
       const remaining = (routeStopsMap[routeId] || []).filter(s => s.id !== stopId);
       for (let i = 0; i < remaining.length; i++) {
