@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -19,7 +19,6 @@ import {
   Copy, ExternalLink
 } from 'lucide-react';
 import PackagePricing from '@/components/admin/PackagePricing';
-import { smartGroupRequests, generateSmartRoute, haversine, type RouteRequest, type SmartGroup, type GeneratedRoute } from '@/lib/smartRouting';
 
 type AdminTab = 'routes' | 'drivers' | 'shuttles' | 'bookings' | 'analytics' | 'approvals' | 'settings' | 'carpool' | 'users' | 'route_requests' | 'packages' | 'content' | 'refunds' | 'earnings' | 'partners' | 'partner_routes' | 'partner_packages';
 
@@ -88,10 +87,6 @@ const AdminPanel = () => {
   const [rejectNotes, setRejectNotes] = useState<Record<string, string>>({});
   const [showRejectInput, setShowRejectInput] = useState<string | null>(null);
   const [partnerPackageRequests, setPartnerPackageRequests] = useState<any[]>([]);
-  const [expandedGroupIndex, setExpandedGroupIndex] = useState<number | null>(null);
-  const [creatingRouteFromGroup, setCreatingRouteFromGroup] = useState<number | null>(null);
-  const [editedGroupStops, setEditedGroupStops] = useState<Record<number, GeneratedRoute | null>>({});
-  const [draggingStopIdx, setDraggingStopIdx] = useState<number | null>(null);
 
   // Published trips
   const [publishedTrips, setPublishedTrips] = useState<any[]>([]);
@@ -2317,288 +2312,61 @@ const AdminPanel = () => {
         })()}
 
         {/* Route Requests Tab */}
-        {tab === 'route_requests' && (() => {
-          const allByUser: Record<string, any[]> = {};
-          routeRequests.forEach((rr: any) => {
-            if (!allByUser[rr.user_id]) allByUser[rr.user_id] = [];
-            allByUser[rr.user_id].push(rr);
-          });
-
-          const groups = smartGroupRequests(routeRequests as RouteRequest[]);
-          const uniqueUserCount = new Set(routeRequests.map((rr: any) => rr.user_id)).size;
-
-          const dayLabels = lang === 'ar'
-            ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
-            : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-          const getEditedRoute = (gi: number): GeneratedRoute => {
-            if (editedGroupStops[gi]) return editedGroupStops[gi]!;
-            return generateSmartRoute(groups[gi]);
-          };
-
-          const updateStopInGroup = (gi: number, stopIdx: number, lat: number, lng: number, name?: string) => {
-            const route = { ...getEditedRoute(gi) };
-            const stops = [...route.stops];
-            stops[stopIdx] = { ...stops[stopIdx], lat, lng, name: name || stops[stopIdx].name };
-            setEditedGroupStops(prev => ({ ...prev, [gi]: { ...route, stops } }));
-          };
-
-          const removeStopFromGroup = (gi: number, stopIdx: number) => {
-            const route = { ...getEditedRoute(gi) };
-            const stops = route.stops.filter((_, i) => i !== stopIdx);
-            setEditedGroupStops(prev => ({ ...prev, [gi]: { ...route, stops } }));
-          };
-
-          const addStopToGroup = (gi: number, lat: number, lng: number) => {
-            const route = { ...getEditedRoute(gi) };
-            const stops = [...route.stops, { lat, lng, name: `Stop ${route.stops.length + 1}`, userCount: 0, userIds: [] }];
-            setEditedGroupStops(prev => ({ ...prev, [gi]: { ...route, stops } }));
-          };
-
-          const reorderStopInGroup = (gi: number, fromIdx: number, toIdx: number) => {
-            const route = { ...getEditedRoute(gi) };
-            const stops = [...route.stops];
-            const [moved] = stops.splice(fromIdx, 1);
-            stops.splice(toIdx, 0, moved);
-            setEditedGroupStops(prev => ({ ...prev, [gi]: { ...route, stops } }));
-          };
-
-          const handleCreateOfficialRoute = async (gi: number) => {
-            const group = groups[gi];
-            const generated = getEditedRoute(gi);
-            setCreatingRouteFromGroup(gi);
-            try {
-              const routeName = `${generated.origin.name} → ${generated.destination.name}`;
-              const { data: newRoute, error } = await supabase.from('routes').insert({
-                name_en: routeName, name_ar: routeName,
-                origin_name_en: generated.origin.name, origin_name_ar: generated.origin.name,
-                origin_lat: generated.origin.lat, origin_lng: generated.origin.lng,
-                destination_name_en: generated.destination.name, destination_name_ar: generated.destination.name,
-                destination_lat: generated.destination.lat, destination_lng: generated.destination.lng,
-                estimated_duration_minutes: Math.max(30, Math.round(generated.totalDistance * 1.2)),
-                price: 0, status: 'active',
-              }).select().single();
-              if (error || !newRoute) { toast.error(error?.message || 'Failed'); setCreatingRouteFromGroup(null); return; }
-              if (generated.stops.length > 0) {
-                await supabase.from('stops').insert(generated.stops.map((s, i) => ({
-                  route_id: newRoute.id, name_en: s.name, name_ar: s.name,
-                  lat: s.lat, lng: s.lng, stop_order: i + 1, stop_type: 'both',
-                })));
-              }
-              const userIds = group.requests.map(rr => rr.user_id);
-              for (const uid of userIds) {
-                await supabase.from('route_requests').update({ status: 'fulfilled' }).eq('user_id', uid).eq('status', 'pending');
-              }
-              toast.success(lang === 'ar' ? `تم إنشاء المسار مع ${generated.stops.length} محطات` : `Route "${routeName}" created with ${generated.stops.length} stops`);
-              fetchAllData();
-              setTab('routes');
-            } catch (err: any) { toast.error(err.message); }
-            setCreatingRouteFromGroup(null);
-          };
-
-          return (
+        {tab === 'route_requests' && (
           <div className="space-y-4">
-            <h2 className="text-xl font-bold text-foreground">{lang === 'ar' ? 'طلبات المسارات (تجميع ذكي)' : 'Route Requests (Smart Shuttle Groups)'}</h2>
-            <p className="text-sm text-muted-foreground">
-              {lang === 'ar' ? `${uniqueUserCount} مستخدم فريد · ${groups.length} مجموعة · ${routeRequests.length} طلب إجمالي` : `${uniqueUserCount} unique users · ${groups.length} groups · ${routeRequests.length} total requests`}
-            </p>
-            <div className="bg-muted/50 border border-border rounded-lg p-3 text-xs text-muted-foreground space-y-1">
-              <p className="font-medium text-foreground">{lang === 'ar' ? '🚌 منطق التجميع الذكي' : '🚌 Smart Shuttle Logic'}</p>
-              <ul className="list-disc list-inside space-y-0.5">
-                <li>{lang === 'ar' ? 'التجميع حسب الوجهة أولاً (المستخدمون المتجهون لنفس المنطقة)' : 'Groups by destination first (users heading to same area)'}</li>
-                <li>{lang === 'ar' ? 'المحطات على الطرق الرئيسية فقط (الدائري، 26 يوليو، إلخ)' : 'Stops on main roads only (Ring Road, 26 July, etc.)'}</li>
-                <li>{lang === 'ar' ? 'لا التفافات - يتبع ممرات حقيقية في القاهرة' : 'No detours — follows real Cairo corridors'}</li>
-                <li>{lang === 'ar' ? 'يمشي المستخدمون مسافة قصيرة إلى أقرب محطة رئيسية' : 'Users walk short distance to nearest main road stop'}</li>
-              </ul>
-            </div>
-            {groups.length === 0 ? (
-              <div className="bg-card border border-border rounded-xl p-8 text-center text-muted-foreground">{lang === 'ar' ? 'لا توجد طلبات مسارات بعد' : 'No route requests yet'}</div>
+            <h2 className="text-xl font-bold text-foreground">{lang === 'ar' ? 'طلبات المسارات' : 'Route Requests'}</h2>
+            <p className="text-sm text-muted-foreground">{lang === 'ar' ? `${routeRequests.length} طلب` : `${routeRequests.length} requests`}</p>
+            {routeRequests.length === 0 ? (
+              <div className="bg-card border border-border rounded-xl p-8 text-center text-muted-foreground">
+                {lang === 'ar' ? 'لا توجد طلبات مسارات بعد' : 'No route requests yet'}
+              </div>
             ) : (
               <div className="space-y-3">
-                {groups.map((group, gi) => {
-                   const isExpanded = expandedGroupIndex === gi;
-                   const generated = getEditedRoute(gi);
+                {routeRequests.map((rr: any) => {
+                  const prof = routeRequestProfiles[rr.user_id];
+                  const dayLabels = lang === 'ar'
+                    ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+                    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
                   return (
-                  <div key={gi} className="bg-card border border-border rounded-xl overflow-hidden">
-                    <button className="w-full p-4 flex items-center justify-between hover:bg-muted/30 transition-colors text-start" onClick={() => setExpandedGroupIndex(isExpanded ? null : gi)}>
-                      <div className="flex items-center gap-3">
-                        <div className="bg-primary text-primary-foreground rounded-full w-9 h-9 flex items-center justify-center text-sm font-bold shrink-0">{group.requests.length}</div>
+                    <div key={rr.id} className="bg-card border border-border rounded-xl p-5 space-y-3">
+                      <div className="flex items-center justify-between">
                         <div>
-                          <p className="font-semibold text-foreground text-sm">{group.originLabel} → {group.destLabel}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {group.requests.length} {lang === 'ar' ? 'أشخاص' : 'people'} · {generated.stops.length} {lang === 'ar' ? 'محطات' : 'stops'} · ~{generated.totalDistance.toFixed(1)} km
-                            {generated.corridor && <span className="text-primary ms-1">· 🛣️ {generated.corridor.name}</span>}
-                          </p>
+                          <p className="font-medium text-foreground">{prof?.full_name || rr.user_id.slice(0, 8)}</p>
+                          <p className="text-xs text-muted-foreground">{new Date(rr.created_at).toLocaleString()}</p>
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[rr.status] || 'bg-muted text-muted-foreground'}`}>
+                          {rr.status}
+                        </span>
+                      </div>
+                      <div className="grid sm:grid-cols-2 gap-2 text-sm">
+                        <div className="flex items-start gap-2">
+                          <MapPin className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
+                          <span className="text-foreground">{rr.origin_name}</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <MapPin className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                          <span className="text-foreground">{rr.destination_name}</span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {group.requests.length >= 3 && <span className="text-xs bg-accent text-accent-foreground px-2 py-1 rounded-full font-medium">🔥 {lang === 'ar' ? 'طلب عالي' : 'Hot'}</span>}
-                        <ChevronDown className={`w-5 h-5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                      </div>
-                    </button>
-                    {isExpanded && (
-                      <div className="border-t border-border">
-                        {/* Map with real directions, user locations, and stops */}
-                        <div className="h-[400px] relative">
-                          <MapView
-                            origin={generated.origin}
-                            destination={generated.destination}
-                            waypoints={generated.stops.map(s => ({ lat: s.lat, lng: s.lng }))}
-                            showDirections={true}
-                            markers={[
-                              // Origin (green)
-                              { lat: generated.origin.lat, lng: generated.origin.lng, label: 'A', color: 'green' },
-                              // Destination (red)
-                              { lat: generated.destination.lat, lng: generated.destination.lng, label: 'B', color: 'red' },
-                              // Generated stops (blue, numbered)
-                              ...generated.stops.map((s, i) => ({ lat: s.lat, lng: s.lng, label: `${i + 1}`, color: 'blue' as const })),
-                              // User pickup locations (orange)
-                              ...group.requests.map((rr: any) => ({ lat: rr.origin_lat, lng: rr.origin_lng, label: (routeRequestProfiles[rr.user_id]?.full_name || '?')[0], color: 'orange' as const })),
-                              // User dropoff locations (purple)
-                              ...group.requests.map((rr: any) => ({ lat: rr.destination_lat, lng: rr.destination_lng, label: '🏁', color: 'purple' as const })),
-                            ]}
-                            showUserLocation={false}
-                            zoom={10}
-                            onMapClick={(lat, lng) => addStopToGroup(gi, lat, lng)}
-                            className="h-full w-full rounded-none"
-                          />
-                          <div className="absolute top-2 start-2 bg-card/90 backdrop-blur rounded-lg p-2 text-xs space-y-1 border border-border shadow-md z-[5]">
-                            <p className="font-medium text-foreground">{lang === 'ar' ? 'دليل الألوان' : 'Legend'}</p>
-                            <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" />{lang === 'ar' ? 'نقطة البداية' : 'Origin'}</div>
-                            <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-destructive inline-block" />{lang === 'ar' ? 'الوجهة' : 'Destination'}</div>
-                            <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-primary inline-block" />{lang === 'ar' ? 'محطات مقترحة' : 'Generated Stops'}</div>
-                            <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: '#F97316'}} />{lang === 'ar' ? 'نقاط ركوب المستخدمين' : 'User Pickups'}</div>
-                            <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: '#8B5CF6'}} />{lang === 'ar' ? 'نقاط نزول المستخدمين' : 'User Dropoffs'}</div>
-                            <p className="text-muted-foreground pt-1">{lang === 'ar' ? 'اضغط على الخريطة لإضافة محطة' : 'Click map to add a stop'}</p>
-                          </div>
+                      {rr.preferred_time && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> {rr.preferred_time}
+                        </p>
+                      )}
+                      {rr.preferred_days && rr.preferred_days.length > 0 && (
+                        <div className="flex gap-1 flex-wrap">
+                          {rr.preferred_days.map((d: number) => (
+                            <span key={d} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">{dayLabels[d]}</span>
+                          ))}
                         </div>
-
-                        {/* Editable stops list */}
-                        <div className="p-4 bg-primary/5 space-y-3">
-                          <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                            <Route className="w-4 h-4 text-primary" />{lang === 'ar' ? 'المحطات (قابلة للتعديل)' : 'Stops (Editable)'}
-                            {generated.corridor && <span className="text-xs text-muted-foreground font-normal">🛣️ {generated.corridor.name}</span>}
-                            {editedGroupStops[gi] && <span className="text-xs text-accent-foreground bg-accent px-2 py-0.5 rounded-full">{lang === 'ar' ? 'معدّل' : 'Modified'}</span>}
-                          </h4>
-
-                          <div className="space-y-1.5">
-                            {/* Origin */}
-                            <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-green-500/10 border border-green-500/20">
-                              <span className="w-3 h-3 rounded-full bg-green-500 shrink-0" />
-                              <span className="text-sm font-medium text-foreground flex-1">{generated.origin.name}</span>
-                              <span className="text-xs text-muted-foreground">{lang === 'ar' ? 'بداية' : 'Start'}</span>
-                            </div>
-
-                            {/* Stops - draggable */}
-                            {generated.stops.map((s, i) => (
-                              <div
-                                key={i}
-                                draggable
-                                onDragStart={() => setDraggingStopIdx(i)}
-                                onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i); }}
-                                onDrop={() => { if (draggingStopIdx !== null && draggingStopIdx !== i) reorderStopInGroup(gi, draggingStopIdx, i); setDraggingStopIdx(null); setDragOverIndex(null); }}
-                                onDragEnd={() => { setDraggingStopIdx(null); setDragOverIndex(null); }}
-                                className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border cursor-grab active:cursor-grabbing transition-colors ${dragOverIndex === i ? 'bg-primary/10 border-primary' : 'bg-card border-border'}`}
-                              >
-                                <ListOrdered className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold shrink-0">{i + 1}</span>
-                                <div className="flex-1 min-w-0">
-                                  <Input
-                                    value={s.name}
-                                    onChange={(e) => updateStopInGroup(gi, i, s.lat, s.lng, e.target.value)}
-                                    className="h-6 text-xs border-0 bg-transparent p-0 focus-visible:ring-0"
-                                  />
-                                </div>
-                                {s.userCount > 0 && <span className="text-xs text-primary shrink-0">{s.userCount} 👤</span>}
-                                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => removeStopFromGroup(gi, i)}>
-                                  <Trash2 className="w-3 h-3 text-destructive" />
-                                </Button>
-                              </div>
-                            ))}
-
-                            {/* Destination */}
-                            <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-destructive/10 border border-destructive/20">
-                              <span className="w-3 h-3 rounded-full bg-destructive shrink-0" />
-                              <span className="text-sm font-medium text-foreground flex-1">{generated.destination.name}</span>
-                              <span className="text-xs text-muted-foreground">{lang === 'ar' ? 'نهاية' : 'End'}</span>
-                            </div>
-                          </div>
-
-                          {editedGroupStops[gi] && (
-                            <Button size="sm" variant="outline" onClick={() => setEditedGroupStops(prev => { const n = { ...prev }; delete n[gi]; return n; })}>
-                              <RotateCcw className="w-3.5 h-3.5 me-1" />{lang === 'ar' ? 'إعادة تعيين' : 'Reset to Auto'}
-                            </Button>
-                          )}
-
-                          <div className="flex gap-2 pt-1 flex-wrap">
-                            <Button size="sm" onClick={() => handleCreateOfficialRoute(gi)} disabled={creatingRouteFromGroup === gi}>
-                              {creatingRouteFromGroup === gi ? <Loader2 className="w-3.5 h-3.5 animate-spin me-1" /> : <CheckCircle2 className="w-3.5 h-3.5 me-1" />}
-                              {lang === 'ar' ? 'اعتماد كمسار رسمي' : 'Approve as Official Route'}
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => {
-                              const points = [`${generated.origin.lat},${generated.origin.lng}`, ...generated.stops.map(s => `${s.lat},${s.lng}`), `${generated.destination.lat},${generated.destination.lng}`];
-                              window.open(`https://www.google.com/maps/dir/${points.join('/')}`, '_blank');
-                            }}>
-                              <ExternalLink className="w-3.5 h-3.5 me-1" />{lang === 'ar' ? 'Google Maps' : 'Google Maps'}
-                            </Button>
-                          </div>
-                        </div>
-
-                        {/* Users list */}
-                        <div className="divide-y divide-border">
-                          {group.requests.map((rr: any) => {
-                            const prof = routeRequestProfiles[rr.user_id];
-                            const userRequests = allByUser[rr.user_id] || [];
-                            const assignedStop = generated.stops.find(s => s.userIds.includes(rr.user_id));
-                            const walkDist = assignedStop ? haversine(rr.origin_lat, rr.origin_lng, assignedStop.lat, assignedStop.lng) : null;
-                            return (
-                              <details key={rr.id} className="group/person">
-                                <summary className="p-3 flex items-center justify-between cursor-pointer hover:bg-muted/50 transition-colors list-none">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-foreground">{(prof?.full_name || '?')[0]}</div>
-                                    <div>
-                                      <p className="text-sm font-medium text-foreground">{prof?.full_name || rr.user_id.slice(0, 8)}</p>
-                                      <p className="text-xs text-muted-foreground">
-                                        {prof?.phone || ''}
-                                        {assignedStop && <span className="ms-2 text-primary">→ {assignedStop.name}</span>}
-                                        {walkDist !== null && <span className="ms-1 text-muted-foreground">({walkDist < 1 ? `${Math.round(walkDist * 1000)}m` : `${walkDist.toFixed(1)}km`} {lang === 'ar' ? 'مشي' : 'walk'})</span>}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    {walkDist !== null && walkDist > 2 && <span className="text-xs bg-destructive/10 text-destructive px-2 py-0.5 rounded-full">⚠️ {lang === 'ar' ? 'بعيد' : 'Far'}</span>}
-                                    {userRequests.length > 1 && <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">{userRequests.length} {lang === 'ar' ? 'طلبات' : 'req'}</span>}
-                                    <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[rr.status] || 'bg-muted text-muted-foreground'}`}>{rr.status}</span>
-                                    <ChevronDown className="w-4 h-4 text-muted-foreground group-open/person:rotate-180 transition-transform" />
-                                  </div>
-                                </summary>
-                                <div className="px-4 pb-3 space-y-2 bg-muted/30">
-                                  {userRequests.map((ur: any, ui: number) => (
-                                    <div key={ur.id} className={`text-xs p-2 rounded-lg ${ui === 0 ? 'bg-primary/5 border border-primary/20' : 'bg-card border border-border'}`}>
-                                      <div className="flex items-start gap-2 mb-1"><MapPin className="w-3 h-3 text-green-500 mt-0.5 shrink-0" /><span className="text-foreground">{ur.origin_name}</span></div>
-                                      <div className="flex items-start gap-2 mb-1"><MapPin className="w-3 h-3 text-destructive mt-0.5 shrink-0" /><span className="text-foreground">{ur.destination_name}</span></div>
-                                      <div className="flex items-center gap-3 text-muted-foreground">
-                                        {ur.preferred_time && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{ur.preferred_time}</span>}
-                                        <span>{new Date(ur.created_at).toLocaleDateString()}</span>
-                                        {ur.preferred_days?.length > 0 && <span>{ur.preferred_days.map((d: number) => dayLabels[d]).join(', ')}</span>}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </details>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
             )}
           </div>
-          );
-        })()}
+        )}
 
         {/* Refunds Tab */}
         {tab === 'refunds' && (
