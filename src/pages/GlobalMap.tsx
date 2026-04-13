@@ -37,6 +37,8 @@ const GlobalMap = () => {
   const [showConnectedRoutes, setShowConnectedRoutes] = useState(false);
   const [connectedDirections, setConnectedDirections] = useState<google.maps.DirectionsResult[]>([]);
   const [loadingRoutes, setLoadingRoutes] = useState(false);
+  const [originalPositions, setOriginalPositions] = useState<Record<string, { oLat: number; oLng: number; dLat: number; dLng: number }>>({});
+  const [zonesLocked, setZonesLocked] = useState(false);
 
   // Circle zones
   const [circleZones, setCircleZones] = useState<CircleZone[]>([]);
@@ -254,6 +256,15 @@ const GlobalMap = () => {
       setShowConnectedRoutes(false);
       setConnectedDirections([]);
       setConnectedRouteInfo(null);
+      // Restore original positions
+      if (Object.keys(originalPositions).length > 0) {
+        setAllUsers(prev => prev.map(u => {
+          const orig = originalPositions[u.id];
+          if (orig) return { ...u, originLat: orig.oLat, originLng: orig.oLng, destinationLat: orig.dLat, destinationLng: orig.dLng };
+          return u;
+        }));
+        setOriginalPositions({});
+      }
       return;
     }
 
@@ -262,6 +273,11 @@ const GlobalMap = () => {
       toast({ title: 'Need at least 2 visible users', variant: 'destructive' });
       return;
     }
+
+    // Save original positions before allowing dragging
+    const positions: Record<string, { oLat: number; oLng: number; dLat: number; dLng: number }> = {};
+    users.forEach(u => { positions[u.id] = { oLat: u.originLat, oLng: u.originLng, dLat: u.destinationLat, dLng: u.destinationLng }; });
+    setOriginalPositions(positions);
 
     setLoadingRoutes(true);
     setShowConnectedRoutes(true);
@@ -354,6 +370,63 @@ const GlobalMap = () => {
 
     setLoadingRoutes(false);
   }, [showConnectedRoutes, filteredUsers, toast]);
+
+  // Auto-recalculate connected routes after marker drag
+  const recalculateConnectedRoutes = useCallback(async (users: RouteRequestUser[]) => {
+    if (!showConnectedRoutes || users.length < 2) return;
+    setLoadingRoutes(true);
+    const ds = new google.maps.DirectionsService();
+    const results: google.maps.DirectionsResult[] = [];
+
+    try {
+      const pickupPoints = users.map(u => ({ lat: u.originLat, lng: u.originLng }));
+      if (pickupPoints.length >= 2 && pickupPoints.length <= 25) {
+        try {
+          const pickupRoute = await ds.route({
+            origin: new google.maps.LatLng(pickupPoints[0].lat, pickupPoints[0].lng),
+            destination: new google.maps.LatLng(pickupPoints[pickupPoints.length - 1].lat, pickupPoints[pickupPoints.length - 1].lng),
+            waypoints: pickupPoints.slice(1, -1).map(p => ({ location: new google.maps.LatLng(p.lat, p.lng), stopover: true })),
+            optimizeWaypoints: true,
+            travelMode: google.maps.TravelMode.DRIVING,
+          });
+          results.push(pickupRoute);
+        } catch (e) { console.error('Pickup recalc failed:', e); }
+      }
+
+      const dropoffPoints = users.map(u => ({ lat: u.destinationLat, lng: u.destinationLng }));
+      if (dropoffPoints.length >= 2 && dropoffPoints.length <= 25) {
+        try {
+          const dropoffRoute = await ds.route({
+            origin: new google.maps.LatLng(dropoffPoints[0].lat, dropoffPoints[0].lng),
+            destination: new google.maps.LatLng(dropoffPoints[dropoffPoints.length - 1].lat, dropoffPoints[dropoffPoints.length - 1].lng),
+            waypoints: dropoffPoints.slice(1, -1).map(p => ({ location: new google.maps.LatLng(p.lat, p.lng), stopover: true })),
+            optimizeWaypoints: true,
+            travelMode: google.maps.TravelMode.DRIVING,
+          });
+          results.push(dropoffRoute);
+        } catch (e) { console.error('Dropoff recalc failed:', e); }
+      }
+
+      // Bridge
+      if (results.length >= 2) {
+        const lastPickupLeg = results[0].routes[0]?.legs;
+        const lastPickup = lastPickupLeg?.[lastPickupLeg.length - 1]?.end_location;
+        const firstDropoff = results[1]?.routes[0]?.legs?.[0]?.start_location;
+        if (lastPickup && firstDropoff) {
+          try {
+            const bridge = await ds.route({ origin: lastPickup, destination: firstDropoff, travelMode: google.maps.TravelMode.DRIVING });
+            results.splice(1, 0, bridge);
+          } catch (e) { console.error('Bridge recalc failed:', e); }
+        }
+      }
+    } catch (err) { console.error('Recalculate error:', err); }
+
+    setConnectedDirections(results);
+    let totalDist = 0, totalDur = 0;
+    results.forEach(dir => { dir.routes[0]?.legs?.forEach(l => { totalDist += l.distance?.value || 0; totalDur += l.duration?.value || 0; }); });
+    setConnectedRouteInfo({ distance: `${(totalDist / 1000).toFixed(1)} km`, duration: `${Math.round(totalDur / 60)} min` });
+    setLoadingRoutes(false);
+  }, [showConnectedRoutes]);
 
   // Save route
   const handleSaveRoute = async () => {
@@ -639,6 +712,8 @@ const GlobalMap = () => {
         onOpenInGoogleMaps={handleOpenInGoogleMaps}
         onFilterCommonDays={() => setFilters(f => ({ ...f, commonDaysOnly: !f.commonDaysOnly }))}
         commonDaysActive={!!filters.commonDaysOnly}
+        zonesLocked={zonesLocked}
+        onToggleZonesLocked={() => setZonesLocked(l => !l)}
       />
 
       <UserSidebar
@@ -715,9 +790,9 @@ const GlobalMap = () => {
               key={zone.id}
               center={{ lat: zone.lat, lng: zone.lng }}
               radius={zone.radius}
-              draggable
+              draggable={!zonesLocked}
               onDragEnd={(e) => {
-                if (e.latLng) handleMoveZone(zone.id, e.latLng.lat(), e.latLng.lng());
+                if (e.latLng && !zonesLocked) handleMoveZone(zone.id, e.latLng.lat(), e.latLng.lng());
               }}
               options={{
                 fillColor: color,
@@ -757,7 +832,14 @@ const GlobalMap = () => {
             onClick={() => setSelectedUser(u)}
             onDragEnd={(e) => {
               if (!e.latLng) return;
-              setAllUsers(prev => prev.map(usr => usr.id === u.id ? { ...usr, originLat: e.latLng!.lat(), originLng: e.latLng!.lng() } : usr));
+              const newLat = e.latLng.lat(), newLng = e.latLng.lng();
+              setAllUsers(prev => {
+                const updated = prev.map(usr => usr.id === u.id ? { ...usr, originLat: newLat, originLng: newLng } : usr);
+                // Auto-recalculate with updated positions
+                const visible = updated.filter(usr => !hiddenUserIds.has(usr.id));
+                setTimeout(() => recalculateConnectedRoutes(visible.slice(0, 25)), 100);
+                return updated;
+              });
             }}
           />
         ))}
@@ -775,7 +857,13 @@ const GlobalMap = () => {
             onClick={() => setSelectedUser(u)}
             onDragEnd={(e) => {
               if (!e.latLng) return;
-              setAllUsers(prev => prev.map(usr => usr.id === u.id ? { ...usr, destinationLat: e.latLng!.lat(), destinationLng: e.latLng!.lng() } : usr));
+              const newLat = e.latLng.lat(), newLng = e.latLng.lng();
+              setAllUsers(prev => {
+                const updated = prev.map(usr => usr.id === u.id ? { ...usr, destinationLat: newLat, destinationLng: newLng } : usr);
+                const visible = updated.filter(usr => !hiddenUserIds.has(usr.id));
+                setTimeout(() => recalculateConnectedRoutes(visible.slice(0, 25)), 100);
+                return updated;
+              });
             }}
           />
         ))}

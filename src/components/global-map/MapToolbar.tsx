@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
-import { ChevronLeft, Route, Layers, Filter, X, Plus, Trash2, MapPin, Circle, Save, ExternalLink, Users } from 'lucide-react';
+import { ChevronLeft, Route, Layers, Filter, X, Plus, Trash2, MapPin, Circle, Save, ExternalLink, Users, Lock, Unlock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { type FilterState, type CircleZone, ZONE_COLORS, AREA_PRESETS } from './types';
 
@@ -37,6 +37,8 @@ interface MapToolbarProps {
   onOpenInGoogleMaps: () => void;
   onFilterCommonDays: () => void;
   commonDaysActive: boolean;
+  zonesLocked: boolean;
+  onToggleZonesLocked: () => void;
 }
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -53,6 +55,7 @@ const MapToolbar = ({
   addingCircleType, addingCirclePairId, onCancelAdding,
   hourlyDistribution, canSaveConnectedRoute, onSaveConnectedRoute, savingConnectedRoute,
   onOpenInGoogleMaps, onFilterCommonDays, commonDaysActive,
+  zonesLocked, onToggleZonesLocked,
 }: MapToolbarProps) => {
   const [newPairName, setNewPairName] = useState('');
   const [showZones, setShowZones] = useState(false);
@@ -94,6 +97,11 @@ const MapToolbar = ({
           <Circle className="w-3.5 h-3.5" />
           Zones {circleZones.length > 0 && `(${pairIds.length})`}
         </Button>
+        {circleZones.length > 0 && (
+          <Button variant={zonesLocked ? 'default' : 'outline'} size="sm" onClick={onToggleZonesLocked} className="gap-1 shrink-0" title={zonesLocked ? 'Unlock zones' : 'Lock zones'}>
+            {zonesLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+          </Button>
+        )}
         <Button variant={showLines ? 'secondary' : 'outline'} size="sm" onClick={onToggleLines} className="gap-1 shrink-0">
           <Layers className="w-3.5 h-3.5" />
           Lines
