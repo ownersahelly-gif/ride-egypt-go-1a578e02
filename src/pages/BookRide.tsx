@@ -966,11 +966,7 @@ const BookRide = () => {
                   </div>
                 </div>
               )}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-surface rounded-xl p-3 text-center">
-                  <p className="text-xl font-bold text-primary">{dynamicPrice} EGP</p>
-                  <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'للراكب' : 'per person'}</p>
-                </div>
+              <div className="grid grid-cols-2 gap-3">
                 <div className="bg-surface rounded-xl p-3 text-center">
                   <p className="text-xl font-bold text-foreground">{formatTime12h(selectedRide.departure_time, lang)}</p>
                   <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'الانطلاق' : 'Departure'}</p>
