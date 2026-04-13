@@ -2312,61 +2312,147 @@ const AdminPanel = () => {
         })()}
 
         {/* Route Requests Tab */}
-        {tab === 'route_requests' && (
+        {tab === 'route_requests' && (() => {
+          // Deduplicate: keep latest request per user
+          const latestByUser: Record<string, any> = {};
+          const allByUser: Record<string, any[]> = {};
+          routeRequests.forEach((rr: any) => {
+            if (!allByUser[rr.user_id]) allByUser[rr.user_id] = [];
+            allByUser[rr.user_id].push(rr);
+            if (!latestByUser[rr.user_id] || new Date(rr.created_at) > new Date(latestByUser[rr.user_id].created_at)) {
+              latestByUser[rr.user_id] = rr;
+            }
+          });
+          const uniqueRequests = Object.values(latestByUser);
+
+          // Group by proximity: origin within ~5km AND destination within ~5km
+          const toRad = (d: number) => d * Math.PI / 180;
+          const haversine = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+            const R = 6371;
+            const dLat = toRad(lat2 - lat1); const dLng = toRad(lng2 - lng1);
+            const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          };
+          const THRESHOLD_KM = 5;
+          const groups: { requests: any[]; originLabel: string; destLabel: string }[] = [];
+          const assigned = new Set<string>();
+          uniqueRequests.forEach(rr => {
+            if (assigned.has(rr.user_id)) return;
+            const group = [rr];
+            assigned.add(rr.user_id);
+            uniqueRequests.forEach(other => {
+              if (assigned.has(other.user_id)) return;
+              if (haversine(rr.origin_lat, rr.origin_lng, other.origin_lat, other.origin_lng) < THRESHOLD_KM &&
+                  haversine(rr.destination_lat, rr.destination_lng, other.destination_lat, other.destination_lng) < THRESHOLD_KM) {
+                group.push(other);
+                assigned.add(other.user_id);
+              }
+            });
+            groups.push({ requests: group, originLabel: rr.origin_name, destLabel: rr.destination_name });
+          });
+          groups.sort((a, b) => b.requests.length - a.requests.length);
+
+          const uniqueUserCount = Object.keys(latestByUser).length;
+          const dayLabels = lang === 'ar'
+            ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+            : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+          return (
           <div className="space-y-4">
-            <h2 className="text-xl font-bold text-foreground">{lang === 'ar' ? 'طلبات المسارات' : 'Route Requests'}</h2>
-            <p className="text-sm text-muted-foreground">{lang === 'ar' ? `${routeRequests.length} طلب` : `${routeRequests.length} requests`}</p>
-            {routeRequests.length === 0 ? (
+            <h2 className="text-xl font-bold text-foreground">{lang === 'ar' ? 'طلبات المسارات (مجمّعة)' : 'Route Requests (Smart Groups)'}</h2>
+            <p className="text-sm text-muted-foreground">
+              {lang === 'ar'
+                ? `${uniqueUserCount} مستخدم فريد · ${groups.length} مجموعة · ${routeRequests.length} طلب إجمالي`
+                : `${uniqueUserCount} unique users · ${groups.length} groups · ${routeRequests.length} total requests`}
+            </p>
+            {groups.length === 0 ? (
               <div className="bg-card border border-border rounded-xl p-8 text-center text-muted-foreground">
                 {lang === 'ar' ? 'لا توجد طلبات مسارات بعد' : 'No route requests yet'}
               </div>
             ) : (
-              <div className="space-y-3">
-                {routeRequests.map((rr: any) => {
-                  const prof = routeRequestProfiles[rr.user_id];
-                  const dayLabels = lang === 'ar'
-                    ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
-                    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                  return (
-                    <div key={rr.id} className="bg-card border border-border rounded-xl p-5 space-y-3">
-                      <div className="flex items-center justify-between">
+              <div className="space-y-4">
+                {groups.map((group, gi) => (
+                  <div key={gi} className="bg-card border border-border rounded-xl overflow-hidden">
+                    <div className="p-4 bg-primary/5 border-b border-border flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">
+                          {group.requests.length}
+                        </div>
                         <div>
-                          <p className="font-medium text-foreground">{prof?.full_name || rr.user_id.slice(0, 8)}</p>
-                          <p className="text-xs text-muted-foreground">{new Date(rr.created_at).toLocaleString()}</p>
+                          <p className="font-semibold text-foreground text-sm">{group.originLabel} → {group.destLabel}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {lang === 'ar'
+                              ? `${group.requests.length} ${group.requests.length === 1 ? 'شخص' : 'أشخاص'} يريدون هذا المسار`
+                              : `${group.requests.length} ${group.requests.length === 1 ? 'person' : 'people'} want this route`}
+                          </p>
                         </div>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[rr.status] || 'bg-muted text-muted-foreground'}`}>
-                          {rr.status}
+                      </div>
+                      {group.requests.length >= 3 && (
+                        <span className="text-xs bg-accent text-accent-foreground px-2 py-1 rounded-full font-medium">
+                          🔥 {lang === 'ar' ? 'طلب عالي' : 'High demand'}
                         </span>
-                      </div>
-                      <div className="grid sm:grid-cols-2 gap-2 text-sm">
-                        <div className="flex items-start gap-2">
-                          <MapPin className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
-                          <span className="text-foreground">{rr.origin_name}</span>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <MapPin className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
-                          <span className="text-foreground">{rr.destination_name}</span>
-                        </div>
-                      </div>
-                      {rr.preferred_time && (
-                        <p className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Clock className="w-3 h-3" /> {rr.preferred_time}
-                        </p>
-                      )}
-                      {rr.preferred_days && rr.preferred_days.length > 0 && (
-                        <div className="flex gap-1 flex-wrap">
-                          {rr.preferred_days.map((d: number) => (
-                            <span key={d} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">{dayLabels[d]}</span>
-                          ))}
-                        </div>
                       )}
                     </div>
-                  );
-                })}
+                    <div className="divide-y divide-border">
+                      {group.requests.map((rr: any) => {
+                        const prof = routeRequestProfiles[rr.user_id];
+                        const userRequests = allByUser[rr.user_id] || [];
+                        return (
+                          <details key={rr.id} className="group">
+                            <summary className="p-3 flex items-center justify-between cursor-pointer hover:bg-muted/50 transition-colors list-none">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-foreground">
+                                  {(prof?.full_name || '?')[0]}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium text-foreground">{prof?.full_name || rr.user_id.slice(0, 8)}</p>
+                                  <p className="text-xs text-muted-foreground">{prof?.phone || ''}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {userRequests.length > 1 && (
+                                  <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+                                    {userRequests.length} {lang === 'ar' ? 'طلبات' : 'requests'}
+                                  </span>
+                                )}
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[rr.status] || 'bg-muted text-muted-foreground'}`}>
+                                  {rr.status}
+                                </span>
+                                <ChevronDown className="w-4 h-4 text-muted-foreground group-open:rotate-180 transition-transform" />
+                              </div>
+                            </summary>
+                            <div className="px-4 pb-3 space-y-2 bg-muted/30">
+                              {userRequests.map((ur: any, ui: number) => (
+                                <div key={ur.id} className={`text-xs p-2 rounded-lg ${ui === 0 ? 'bg-primary/5 border border-primary/20' : 'bg-card border border-border'}`}>
+                                  <div className="flex items-start gap-2 mb-1">
+                                    <MapPin className="w-3 h-3 text-green-500 mt-0.5 shrink-0" />
+                                    <span className="text-foreground">{ur.origin_name}</span>
+                                  </div>
+                                  <div className="flex items-start gap-2 mb-1">
+                                    <MapPin className="w-3 h-3 text-destructive mt-0.5 shrink-0" />
+                                    <span className="text-foreground">{ur.destination_name}</span>
+                                  </div>
+                                  <div className="flex items-center gap-3 text-muted-foreground">
+                                    {ur.preferred_time && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{ur.preferred_time}</span>}
+                                    <span>{new Date(ur.created_at).toLocaleDateString()}</span>
+                                    {ur.preferred_days?.length > 0 && (
+                                      <span>{ur.preferred_days.map((d: number) => dayLabels[d]).join(', ')}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* Refunds Tab */}
         {tab === 'refunds' && (
