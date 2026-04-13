@@ -227,6 +227,34 @@ const MapToolbar = ({
       {/* Zone management panel */}
       {showZones && (
         <div className="px-3 pb-3 border-t border-border pt-2 space-y-3 max-h-[300px] overflow-y-auto">
+          {/* Toggle between manual and AI recommendation */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant={showRecommender ? 'outline' : 'secondary'}
+              size="sm"
+              className="h-7 text-xs flex-1"
+              onClick={() => setShowRecommender(false)}
+            >
+              Manual
+            </Button>
+            <Button
+              variant={showRecommender ? 'secondary' : 'outline'}
+              size="sm"
+              className="h-7 text-xs flex-1 gap-1"
+              onClick={() => setShowRecommender(true)}
+            >
+              <Wand2 className="w-3 h-3" /> Recommend
+            </Button>
+          </div>
+
+          {showRecommender ? (
+            <ZoneRecommender
+              users={allUsers}
+              onCreateZonePair={onCreateZonePair}
+              onClose={() => setShowRecommender(false)}
+            />
+          ) : (
+          <>
           <div className="flex items-center gap-2">
             <Input
               className="h-7 text-xs flex-1"
