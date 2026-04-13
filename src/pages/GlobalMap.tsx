@@ -788,9 +788,9 @@ const GlobalMap = () => {
               key={zone.id}
               center={{ lat: zone.lat, lng: zone.lng }}
               radius={zone.radius}
-              draggable
+              draggable={!zonesLocked}
               onDragEnd={(e) => {
-                if (e.latLng) handleMoveZone(zone.id, e.latLng.lat(), e.latLng.lng());
+                if (e.latLng && !zonesLocked) handleMoveZone(zone.id, e.latLng.lat(), e.latLng.lng());
               }}
               options={{
                 fillColor: color,
