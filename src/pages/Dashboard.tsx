@@ -486,7 +486,7 @@ const Dashboard = () => {
         }).eq('id', activeBundlePurchase.id);
       }
 
-      if (!asWaitlist) {
+      if (!asWaitlist && selectedRide._type !== 'published' && selectedRide.id) {
         await supabase.from('ride_instances').update({
           available_seats: selectedRide.available_seats - 1,
         }).eq('id', selectedRide.id);
