@@ -37,6 +37,8 @@ const GlobalMap = () => {
   const [showConnectedRoutes, setShowConnectedRoutes] = useState(false);
   const [connectedDirections, setConnectedDirections] = useState<google.maps.DirectionsResult[]>([]);
   const [loadingRoutes, setLoadingRoutes] = useState(false);
+  const [originalPositions, setOriginalPositions] = useState<Record<string, { oLat: number; oLng: number; dLat: number; dLng: number }>>({});
+  const [zonesLocked, setZonesLocked] = useState(false);
 
   // Circle zones
   const [circleZones, setCircleZones] = useState<CircleZone[]>([]);
