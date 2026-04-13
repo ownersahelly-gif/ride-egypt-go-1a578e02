@@ -2314,8 +2314,18 @@ const AdminPanel = () => {
         {/* Route Requests Tab */}
         {tab === 'route_requests' && (
           <div className="space-y-4">
-            <h2 className="text-xl font-bold text-foreground">{lang === 'ar' ? 'طلبات المسارات' : 'Route Requests'}</h2>
-            <p className="text-sm text-muted-foreground">{lang === 'ar' ? `${routeRequests.length} طلب` : `${routeRequests.length} requests`}</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-foreground">{lang === 'ar' ? 'طلبات المسارات' : 'Route Requests'}</h2>
+                <p className="text-sm text-muted-foreground">{lang === 'ar' ? `${routeRequests.length} طلب` : `${routeRequests.length} requests`}</p>
+              </div>
+              <Link to="/admin/global-map">
+                <Button className="gap-2">
+                  <Globe className="w-4 h-4" />
+                  {lang === 'ar' ? 'الخريطة الشاملة' : 'Global Map'}
+                </Button>
+              </Link>
+            </div>
             {routeRequests.length === 0 ? (
               <div className="bg-card border border-border rounded-xl p-8 text-center text-muted-foreground">
                 {lang === 'ar' ? 'لا توجد طلبات مسارات بعد' : 'No route requests yet'}
