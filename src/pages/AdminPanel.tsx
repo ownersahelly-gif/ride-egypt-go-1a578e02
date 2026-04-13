@@ -2315,7 +2315,6 @@ const AdminPanel = () => {
 
         {/* Route Requests Tab */}
         {tab === 'route_requests' && (() => {
-          // Deduplicate: keep latest request per user
           const latestByUser: Record<string, any> = {};
           const allByUser: Record<string, any[]> = {};
           routeRequests.forEach((rr: any) => {
@@ -2326,8 +2325,6 @@ const AdminPanel = () => {
             }
           });
           const uniqueRequests = Object.values(latestByUser);
-
-          // Group by proximity: origin within ~5km AND destination within ~5km
           const toRad = (d: number) => d * Math.PI / 180;
           const haversine = (lat1: number, lng1: number, lat2: number, lng2: number) => {
             const R = 6371;
@@ -2353,103 +2350,178 @@ const AdminPanel = () => {
             groups.push({ requests: group, originLabel: rr.origin_name, destLabel: rr.destination_name });
           });
           groups.sort((a, b) => b.requests.length - a.requests.length);
-
           const uniqueUserCount = Object.keys(latestByUser).length;
           const dayLabels = lang === 'ar'
             ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
             : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
+          const generateRouteFromGroup = (group: { requests: any[]; originLabel: string; destLabel: string }) => {
+            const reqs = group.requests;
+            const allPoints: { lat: number; lng: number; name: string; type: 'origin' | 'dest' }[] = [];
+            reqs.forEach(rr => {
+              allPoints.push({ lat: rr.origin_lat, lng: rr.origin_lng, name: rr.origin_name, type: 'origin' });
+              allPoints.push({ lat: rr.destination_lat, lng: rr.destination_lng, name: rr.destination_name, type: 'dest' });
+            });
+            const dedupedPoints: typeof allPoints = [];
+            allPoints.forEach(p => {
+              const exists = dedupedPoints.find(dp => haversine(dp.lat, dp.lng, p.lat, p.lng) < 0.5);
+              if (!exists) dedupedPoints.push(p);
+            });
+            const origins = dedupedPoints.filter(p => p.type === 'origin');
+            const dests = dedupedPoints.filter(p => p.type === 'dest');
+            const avgLat = (pts: typeof allPoints) => pts.reduce((s, p) => s + p.lat, 0) / pts.length;
+            const avgLng = (pts: typeof allPoints) => pts.reduce((s, p) => s + p.lng, 0) / pts.length;
+            const routeOrigin = origins.length > 0
+              ? origins.reduce((closest, p) => haversine(p.lat, p.lng, avgLat(origins), avgLng(origins)) < haversine(closest.lat, closest.lng, avgLat(origins), avgLng(origins)) ? p : closest)
+              : dedupedPoints[0];
+            const routeDest = dests.length > 0
+              ? dests.reduce((closest, p) => haversine(p.lat, p.lng, avgLat(dests), avgLng(dests)) < haversine(closest.lat, closest.lng, avgLat(dests), avgLng(dests)) ? p : closest)
+              : dedupedPoints[dedupedPoints.length - 1];
+            const intermediatePoints = dedupedPoints.filter(p =>
+              !(p.lat === routeOrigin.lat && p.lng === routeOrigin.lng) &&
+              !(p.lat === routeDest.lat && p.lng === routeDest.lng)
+            );
+            intermediatePoints.sort((a, b) =>
+              haversine(routeOrigin.lat, routeOrigin.lng, a.lat, a.lng) -
+              haversine(routeOrigin.lat, routeOrigin.lng, b.lat, b.lng)
+            );
+            return { origin: routeOrigin, destination: routeDest, stops: intermediatePoints, totalDistance: haversine(routeOrigin.lat, routeOrigin.lng, routeDest.lat, routeDest.lng) };
+          };
+          const handleCreateOfficialRoute = async (gi: number) => {
+            const group = groups[gi];
+            const generated = generateRouteFromGroup(group);
+            setCreatingRouteFromGroup(gi);
+            try {
+              const routeName = `${generated.origin.name} → ${generated.destination.name}`;
+              const { data: newRoute, error } = await supabase.from('routes').insert({
+                name_en: routeName, name_ar: routeName,
+                origin_name_en: generated.origin.name, origin_name_ar: generated.origin.name,
+                origin_lat: generated.origin.lat, origin_lng: generated.origin.lng,
+                destination_name_en: generated.destination.name, destination_name_ar: generated.destination.name,
+                destination_lat: generated.destination.lat, destination_lng: generated.destination.lng,
+                estimated_duration_minutes: Math.max(30, Math.round(generated.totalDistance * 2)),
+                price: 0, status: 'active',
+              }).select().single();
+              if (error || !newRoute) { toast.error(error?.message || 'Failed'); setCreatingRouteFromGroup(null); return; }
+              if (generated.stops.length > 0) {
+                await supabase.from('stops').insert(generated.stops.map((s, i) => ({
+                  route_id: newRoute.id, name_en: s.name, name_ar: s.name,
+                  lat: s.lat, lng: s.lng, stop_order: i + 1, stop_type: 'both',
+                })));
+              }
+              const userIds = group.requests.map(rr => rr.user_id);
+              for (const uid of userIds) {
+                await supabase.from('route_requests').update({ status: 'fulfilled' }).eq('user_id', uid).eq('status', 'pending');
+              }
+              toast.success(lang === 'ar' ? `تم إنشاء المسار مع ${generated.stops.length} محطات` : `Route "${routeName}" created with ${generated.stops.length} stops`);
+              fetchAllData();
+              setTab('routes');
+            } catch (err: any) { toast.error(err.message); }
+            setCreatingRouteFromGroup(null);
+          };
           return (
           <div className="space-y-4">
             <h2 className="text-xl font-bold text-foreground">{lang === 'ar' ? 'طلبات المسارات (مجمّعة)' : 'Route Requests (Smart Groups)'}</h2>
             <p className="text-sm text-muted-foreground">
-              {lang === 'ar'
-                ? `${uniqueUserCount} مستخدم فريد · ${groups.length} مجموعة · ${routeRequests.length} طلب إجمالي`
-                : `${uniqueUserCount} unique users · ${groups.length} groups · ${routeRequests.length} total requests`}
+              {lang === 'ar' ? `${uniqueUserCount} مستخدم فريد · ${groups.length} مجموعة · ${routeRequests.length} طلب إجمالي` : `${uniqueUserCount} unique users · ${groups.length} groups · ${routeRequests.length} total requests`}
             </p>
             {groups.length === 0 ? (
-              <div className="bg-card border border-border rounded-xl p-8 text-center text-muted-foreground">
-                {lang === 'ar' ? 'لا توجد طلبات مسارات بعد' : 'No route requests yet'}
-              </div>
+              <div className="bg-card border border-border rounded-xl p-8 text-center text-muted-foreground">{lang === 'ar' ? 'لا توجد طلبات مسارات بعد' : 'No route requests yet'}</div>
             ) : (
-              <div className="space-y-4">
-                {groups.map((group, gi) => (
+              <div className="space-y-3">
+                {groups.map((group, gi) => {
+                  const isExpanded = expandedGroupIndex === gi;
+                  const generated = generateRouteFromGroup(group);
+                  return (
                   <div key={gi} className="bg-card border border-border rounded-xl overflow-hidden">
-                    <div className="p-4 bg-primary/5 border-b border-border flex items-center justify-between">
+                    <button className="w-full p-4 flex items-center justify-between hover:bg-muted/30 transition-colors text-start" onClick={() => setExpandedGroupIndex(isExpanded ? null : gi)}>
                       <div className="flex items-center gap-3">
-                        <div className="bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold">
-                          {group.requests.length}
-                        </div>
+                        <div className="bg-primary text-primary-foreground rounded-full w-9 h-9 flex items-center justify-center text-sm font-bold shrink-0">{group.requests.length}</div>
                         <div>
                           <p className="font-semibold text-foreground text-sm">{group.originLabel} → {group.destLabel}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {lang === 'ar'
-                              ? `${group.requests.length} ${group.requests.length === 1 ? 'شخص' : 'أشخاص'} يريدون هذا المسار`
-                              : `${group.requests.length} ${group.requests.length === 1 ? 'person' : 'people'} want this route`}
-                          </p>
+                          <p className="text-xs text-muted-foreground">{group.requests.length} {lang === 'ar' ? 'أشخاص' : 'people'} · {generated.stops.length} {lang === 'ar' ? 'محطات' : 'stops'} · ~{generated.totalDistance.toFixed(1)} km</p>
                         </div>
                       </div>
-                      {group.requests.length >= 3 && (
-                        <span className="text-xs bg-accent text-accent-foreground px-2 py-1 rounded-full font-medium">
-                          🔥 {lang === 'ar' ? 'طلب عالي' : 'High demand'}
-                        </span>
-                      )}
-                    </div>
-                    <div className="divide-y divide-border">
-                      {group.requests.map((rr: any) => {
-                        const prof = routeRequestProfiles[rr.user_id];
-                        const userRequests = allByUser[rr.user_id] || [];
-                        return (
-                          <details key={rr.id} className="group">
-                            <summary className="p-3 flex items-center justify-between cursor-pointer hover:bg-muted/50 transition-colors list-none">
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-foreground">
-                                  {(prof?.full_name || '?')[0]}
-                                </div>
-                                <div>
-                                  <p className="text-sm font-medium text-foreground">{prof?.full_name || rr.user_id.slice(0, 8)}</p>
-                                  <p className="text-xs text-muted-foreground">{prof?.phone || ''}</p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                {userRequests.length > 1 && (
-                                  <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
-                                    {userRequests.length} {lang === 'ar' ? 'طلبات' : 'requests'}
-                                  </span>
-                                )}
-                                <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[rr.status] || 'bg-muted text-muted-foreground'}`}>
-                                  {rr.status}
-                                </span>
-                                <ChevronDown className="w-4 h-4 text-muted-foreground group-open:rotate-180 transition-transform" />
-                              </div>
-                            </summary>
-                            <div className="px-4 pb-3 space-y-2 bg-muted/30">
-                              {userRequests.map((ur: any, ui: number) => (
-                                <div key={ur.id} className={`text-xs p-2 rounded-lg ${ui === 0 ? 'bg-primary/5 border border-primary/20' : 'bg-card border border-border'}`}>
-                                  <div className="flex items-start gap-2 mb-1">
-                                    <MapPin className="w-3 h-3 text-green-500 mt-0.5 shrink-0" />
-                                    <span className="text-foreground">{ur.origin_name}</span>
-                                  </div>
-                                  <div className="flex items-start gap-2 mb-1">
-                                    <MapPin className="w-3 h-3 text-destructive mt-0.5 shrink-0" />
-                                    <span className="text-foreground">{ur.destination_name}</span>
-                                  </div>
-                                  <div className="flex items-center gap-3 text-muted-foreground">
-                                    {ur.preferred_time && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{ur.preferred_time}</span>}
-                                    <span>{new Date(ur.created_at).toLocaleDateString()}</span>
-                                    {ur.preferred_days?.length > 0 && (
-                                      <span>{ur.preferred_days.map((d: number) => dayLabels[d]).join(', ')}</span>
-                                    )}
-                                  </div>
-                                </div>
+                      <div className="flex items-center gap-2">
+                        {group.requests.length >= 3 && <span className="text-xs bg-accent text-accent-foreground px-2 py-1 rounded-full font-medium">🔥 {lang === 'ar' ? 'طلب عالي' : 'Hot'}</span>}
+                        <ChevronDown className={`w-5 h-5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                      </div>
+                    </button>
+                    {isExpanded && (
+                      <div className="border-t border-border">
+                        <div className="p-4 bg-primary/5 space-y-3">
+                          <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                            <Route className="w-4 h-4 text-primary" />{lang === 'ar' ? 'المسار المقترح تلقائياً' : 'Auto-Generated Route'}
+                          </h4>
+                          <div className="flex items-start gap-3">
+                            <div className="flex flex-col items-center gap-0 mt-1">
+                              <div className="w-3 h-3 rounded-full bg-green-500 border-2 border-background" />
+                              {generated.stops.map((_, i) => (
+                                <Fragment key={i}><div className="w-0.5 h-5 bg-border" /><div className="w-2.5 h-2.5 rounded-full bg-primary/60" /></Fragment>
                               ))}
+                              <div className="w-0.5 h-5 bg-border" />
+                              <div className="w-3 h-3 rounded-full bg-destructive border-2 border-background" />
                             </div>
-                          </details>
-                        );
-                      })}
-                    </div>
+                            <div className="flex-1 space-y-3">
+                              <p className="text-sm font-medium text-foreground">{generated.origin.name}</p>
+                              {generated.stops.map((s, i) => <p key={i} className="text-xs text-muted-foreground">{s.name}</p>)}
+                              <p className="text-sm font-medium text-foreground">{generated.destination.name}</p>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 pt-1">
+                            <Button size="sm" onClick={() => handleCreateOfficialRoute(gi)} disabled={creatingRouteFromGroup === gi}>
+                              {creatingRouteFromGroup === gi ? <Loader2 className="w-3.5 h-3.5 animate-spin me-1" /> : <CheckCircle2 className="w-3.5 h-3.5 me-1" />}
+                              {lang === 'ar' ? 'اعتماد كمسار رسمي' : 'Approve as Official Route'}
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => {
+                              const points = [`${generated.origin.lat},${generated.origin.lng}`, ...generated.stops.map(s => `${s.lat},${s.lng}`), `${generated.destination.lat},${generated.destination.lng}`];
+                              window.open(`https://www.google.com/maps/dir/${points.join('/')}`, '_blank');
+                            }}>
+                              <ExternalLink className="w-3.5 h-3.5 me-1" />{lang === 'ar' ? 'عرض الخريطة' : 'View on Map'}
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="divide-y divide-border">
+                          {group.requests.map((rr: any) => {
+                            const prof = routeRequestProfiles[rr.user_id];
+                            const userRequests = allByUser[rr.user_id] || [];
+                            return (
+                              <details key={rr.id} className="group/person">
+                                <summary className="p-3 flex items-center justify-between cursor-pointer hover:bg-muted/50 transition-colors list-none">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-foreground">{(prof?.full_name || '?')[0]}</div>
+                                    <div>
+                                      <p className="text-sm font-medium text-foreground">{prof?.full_name || rr.user_id.slice(0, 8)}</p>
+                                      <p className="text-xs text-muted-foreground">{prof?.phone || ''}</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {userRequests.length > 1 && <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">{userRequests.length} {lang === 'ar' ? 'طلبات' : 'requests'}</span>}
+                                    <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[rr.status] || 'bg-muted text-muted-foreground'}`}>{rr.status}</span>
+                                    <ChevronDown className="w-4 h-4 text-muted-foreground group-open/person:rotate-180 transition-transform" />
+                                  </div>
+                                </summary>
+                                <div className="px-4 pb-3 space-y-2 bg-muted/30">
+                                  {userRequests.map((ur: any, ui: number) => (
+                                    <div key={ur.id} className={`text-xs p-2 rounded-lg ${ui === 0 ? 'bg-primary/5 border border-primary/20' : 'bg-card border border-border'}`}>
+                                      <div className="flex items-start gap-2 mb-1"><MapPin className="w-3 h-3 text-green-500 mt-0.5 shrink-0" /><span className="text-foreground">{ur.origin_name}</span></div>
+                                      <div className="flex items-start gap-2 mb-1"><MapPin className="w-3 h-3 text-destructive mt-0.5 shrink-0" /><span className="text-foreground">{ur.destination_name}</span></div>
+                                      <div className="flex items-center gap-3 text-muted-foreground">
+                                        {ur.preferred_time && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{ur.preferred_time}</span>}
+                                        <span>{new Date(ur.created_at).toLocaleDateString()}</span>
+                                        {ur.preferred_days?.length > 0 && <span>{ur.preferred_days.map((d: number) => dayLabels[d]).join(', ')}</span>}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
