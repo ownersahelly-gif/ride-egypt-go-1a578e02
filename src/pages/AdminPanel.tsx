@@ -1513,12 +1513,32 @@ const AdminPanel = () => {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Carpool Tab */}
+        {tab === 'carpool' && (
+          <div className="space-y-4">
+            <h2 className="text-xl font-bold text-foreground">{lang === 'ar' ? 'طلبات تحقق الكاربول' : 'Carpool Verifications'}</h2>
+            {carpoolVerifications.length === 0 ? (
+              <div className="bg-card border border-border rounded-xl p-12 text-center text-muted-foreground">
+                {lang === 'ar' ? 'لا توجد طلبات' : 'No verifications yet'}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {carpoolVerifications.map(v => (
+                  <div key={v.id} className="bg-card border border-border rounded-xl p-5 space-y-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <p className="font-semibold text-foreground">{carpoolProfiles[v.user_id]?.full_name || 'Unknown'}</p>
+                        <p className="text-xs text-muted-foreground">{carpoolProfiles[v.user_id]?.phone || 'No phone'}</p>
+                      </div>
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusColors[v.status]}`}>{v.status}</span>
+                    </div>
                     <div className="grid grid-cols-2 gap-3 mb-3 text-sm">
                       <div><span className="text-muted-foreground">{lang === 'ar' ? 'اللوحة:' : 'Plate:'}</span> <span className="font-medium">{v.license_plate}</span></div>
                       <div><span className="text-muted-foreground">{lang === 'ar' ? 'السيارة:' : 'Vehicle:'}</span> <span className="font-medium">{v.vehicle_model}</span></div>
                     </div>
-
-                    {/* Document Links */}
                     <div className="flex flex-wrap gap-2 mb-4">
                       {v.id_front_url && <a href={v.id_front_url} target="_blank" rel="noopener noreferrer" className="text-xs bg-muted px-2 py-1 rounded hover:bg-muted-foreground/10">{lang === 'ar' ? 'بطاقة أمام' : 'ID Front'}</a>}
                       {v.id_back_url && <a href={v.id_back_url} target="_blank" rel="noopener noreferrer" className="text-xs bg-muted px-2 py-1 rounded hover:bg-muted-foreground/10">{lang === 'ar' ? 'بطاقة خلف' : 'ID Back'}</a>}
@@ -1526,7 +1546,6 @@ const AdminPanel = () => {
                       {v.car_license_url && <a href={v.car_license_url} target="_blank" rel="noopener noreferrer" className="text-xs bg-muted px-2 py-1 rounded hover:bg-muted-foreground/10">{lang === 'ar' ? 'رخصة سيارة' : 'Car License'}</a>}
                       {v.selfie_url && <a href={v.selfie_url} target="_blank" rel="noopener noreferrer" className="text-xs bg-muted px-2 py-1 rounded hover:bg-muted-foreground/10">{lang === 'ar' ? 'صورة شخصية' : 'Selfie'}</a>}
                     </div>
-
                     {v.status === 'pending' && (
                       <div className="flex gap-2">
                         <Button size="sm" className="flex-1" onClick={() => handleCarpoolVerification(v.id, 'approved')}>
