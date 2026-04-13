@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
-import { Wand2, Loader2, X } from 'lucide-react';
+import { Wand2, Loader2, X, Lock, Unlock } from 'lucide-react';
 import { type RouteRequestUser, type CircleZone, getDistance } from './types';
 
 interface ZoneRecommenderProps {
@@ -72,7 +72,6 @@ function findCluster(
   };
 }
 
-/** Calculate real driving route stats via Google Directions API */
 async function calculateRealRouteStats(
   users: RouteRequestUser[]
 ): Promise<{ distanceKm: number; durationMin: number } | null> {
@@ -83,7 +82,6 @@ async function calculateRealRouteStats(
   let totalDur = 0;
 
   try {
-    // Pickup chain
     const pickups = users.map(u => ({ lat: u.originLat, lng: u.originLng }));
     if (pickups.length >= 2) {
       const result = await ds.route({
@@ -102,7 +100,6 @@ async function calculateRealRouteStats(
       });
     }
 
-    // Dropoff chain
     const dropoffs = users.map(u => ({ lat: u.destinationLat, lng: u.destinationLng }));
     if (dropoffs.length >= 2) {
       const result = await ds.route({
@@ -121,7 +118,6 @@ async function calculateRealRouteStats(
       });
     }
 
-    // Bridge between last pickup and first dropoff
     if (pickups.length >= 1 && dropoffs.length >= 1) {
       const bridgeResult = await ds.route({
         origin: new google.maps.LatLng(pickups[pickups.length - 1].lat, pickups[pickups.length - 1].lng),
@@ -144,6 +140,23 @@ async function calculateRealRouteStats(
   };
 }
 
+interface LockState {
+  people: boolean;
+  duration: boolean;
+  pickupRadius: boolean;
+  dropoffRadius: boolean;
+}
+
+const LockToggle = ({ locked, onToggle }: { locked: boolean; onToggle: () => void }) => (
+  <button
+    onClick={onToggle}
+    className={`p-0.5 rounded transition-colors ${locked ? 'text-primary' : 'text-muted-foreground/40 hover:text-muted-foreground'}`}
+    title={locked ? 'Locked — strict constraint' : 'Unlocked — flexible'}
+  >
+    {locked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+  </button>
+);
+
 const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderProps) => {
   const [targetPeople, setTargetPeople] = useState(10);
   const [maxTripMin, setMaxTripMin] = useState(90);
@@ -151,113 +164,142 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
   const [maxDropoffRadiusKm, setMaxDropoffRadiusKm] = useState(15);
   const [pairName, setPairName] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [locks, setLocks] = useState<LockState>({
+    people: false,
+    duration: true,
+    pickupRadius: false,
+    dropoffRadius: false,
+  });
   const [preview, setPreview] = useState<{
     pickup: ClusterResult;
     dropoff: ClusterResult;
     routeDistanceKm: number;
     routeDurationMin: number;
     userCount: number;
+    violations: string[];
   } | null>(null);
+
+  const toggleLock = (key: keyof LockState) => {
+    setLocks(prev => ({ ...prev, [key]: !prev[key] }));
+    setPreview(null);
+  };
 
   const handleGenerate = async () => {
     setGenerating(true);
     setPreview(null);
 
-    // Find pickup cluster
-    const pickupCluster = findCluster(
-      users,
-      targetPeople,
-      u => ({ lat: u.originLat, lng: u.originLng }),
-      maxPickupRadiusKm
-    );
+    // Start with target people count
+    let bestResult: typeof preview = null;
 
-    if (!pickupCluster || pickupCluster.userIds.length < 2) {
-      setGenerating(false);
-      return;
+    // Try from targetPeople down to 2 (or up if people is locked)
+    const minPeople = locks.people ? targetPeople : 2;
+    const maxPeople = targetPeople;
+
+    for (let tryCount = maxPeople; tryCount >= minPeople; tryCount--) {
+      const puRadiusLimit = locks.pickupRadius ? maxPickupRadiusKm : undefined;
+      const doRadiusLimit = locks.dropoffRadius ? maxDropoffRadiusKm : undefined;
+
+      const pickupCluster = findCluster(
+        users,
+        tryCount,
+        u => ({ lat: u.originLat, lng: u.originLng }),
+        puRadiusLimit
+      );
+
+      if (!pickupCluster || pickupCluster.userIds.length < 2) continue;
+      if (locks.people && pickupCluster.userIds.length < targetPeople) continue;
+
+      const clusterUsers = users.filter(u => pickupCluster.userIds.includes(u.id));
+
+      const dropoffCluster = findCluster(
+        clusterUsers,
+        clusterUsers.length,
+        u => ({ lat: u.destinationLat, lng: u.destinationLng }),
+        doRadiusLimit
+      );
+
+      if (!dropoffCluster) continue;
+
+      // Check radius constraints
+      if (locks.pickupRadius && pickupCluster.radius > maxPickupRadiusKm * 1000) continue;
+      if (locks.dropoffRadius && dropoffCluster.radius > maxDropoffRadiusKm * 1000) continue;
+
+      const routeStats = await calculateRealRouteStats(clusterUsers);
+
+      if (routeStats) {
+        // If duration is locked and exceeds, skip this count
+        if (locks.duration && routeStats.durationMin > maxTripMin) continue;
+
+        // Found a valid result
+        const violations: string[] = [];
+        if (!locks.duration && routeStats.durationMin > maxTripMin) violations.push('duration');
+        if (!locks.pickupRadius && pickupCluster.radius > maxPickupRadiusKm * 1000) violations.push('pickup radius');
+        if (!locks.dropoffRadius && dropoffCluster.radius > maxDropoffRadiusKm * 1000) violations.push('dropoff radius');
+        if (!locks.people && clusterUsers.length < targetPeople) violations.push('people count');
+
+        bestResult = {
+          pickup: pickupCluster,
+          dropoff: dropoffCluster,
+          routeDistanceKm: routeStats.distanceKm,
+          routeDurationMin: routeStats.durationMin,
+          userCount: clusterUsers.length,
+          violations,
+        };
+        break;
+      } else {
+        // Fallback straight-line
+        let totalDist = 0;
+        clusterUsers.forEach(u => {
+          totalDist += getDistance(u.originLat, u.originLng, u.destinationLat, u.destinationLng);
+        });
+
+        bestResult = {
+          pickup: pickupCluster,
+          dropoff: dropoffCluster,
+          routeDistanceKm: totalDist / clusterUsers.length / 1000,
+          routeDurationMin: 0,
+          userCount: clusterUsers.length,
+          violations: [],
+        };
+        break;
+      }
     }
 
-    const clusterUsers = users.filter(u => pickupCluster.userIds.includes(u.id));
+    // If no valid result found with strict locks, show best effort without locked duration
+    if (!bestResult) {
+      const pickupCluster = findCluster(
+        users,
+        locks.people ? targetPeople : Math.min(targetPeople, users.length),
+        u => ({ lat: u.originLat, lng: u.originLng }),
+        locks.pickupRadius ? maxPickupRadiusKm : undefined
+      );
 
-    // Find dropoff cluster
-    const dropoffCluster = findCluster(
-      clusterUsers,
-      clusterUsers.length,
-      u => ({ lat: u.destinationLat, lng: u.destinationLng }),
-      maxDropoffRadiusKm
-    );
+      if (pickupCluster && pickupCluster.userIds.length >= 2) {
+        const clusterUsers = users.filter(u => pickupCluster.userIds.includes(u.id));
+        const dropoffCluster = findCluster(
+          clusterUsers,
+          clusterUsers.length,
+          u => ({ lat: u.destinationLat, lng: u.destinationLng }),
+          locks.dropoffRadius ? maxDropoffRadiusKm : undefined
+        );
 
-    if (!dropoffCluster) {
-      setGenerating(false);
-      return;
-    }
+        if (dropoffCluster) {
+          const routeStats = await calculateRealRouteStats(clusterUsers);
+          const violations: string[] = ['Could not satisfy all locked constraints'];
 
-    // Calculate real driving route stats
-    const routeStats = await calculateRealRouteStats(clusterUsers);
-
-    if (routeStats) {
-      // If route exceeds max time, try reducing people
-      if (routeStats.durationMin > maxTripMin && clusterUsers.length > 2) {
-        // Iteratively reduce users until duration fits
-        let bestUsers = clusterUsers;
-        for (let reduce = 1; reduce < clusterUsers.length - 1; reduce++) {
-          const fewer = clusterUsers.length - reduce;
-          const smallerPickup = findCluster(
-            users,
-            fewer,
-            u => ({ lat: u.originLat, lng: u.originLng }),
-            maxPickupRadiusKm
-          );
-          if (!smallerPickup || smallerPickup.userIds.length < 2) break;
-
-          const smallerUsers = users.filter(u => smallerPickup.userIds.includes(u.id));
-          const smallerStats = await calculateRealRouteStats(smallerUsers);
-
-          if (smallerStats && smallerStats.durationMin <= maxTripMin) {
-            bestUsers = smallerUsers;
-
-            const newPickup = findCluster(bestUsers, bestUsers.length, u => ({ lat: u.originLat, lng: u.originLng }), maxPickupRadiusKm);
-            const newDropoff = findCluster(bestUsers, bestUsers.length, u => ({ lat: u.destinationLat, lng: u.destinationLng }), maxDropoffRadiusKm);
-
-            if (newPickup && newDropoff) {
-              setPreview({
-                pickup: newPickup,
-                dropoff: newDropoff,
-                routeDistanceKm: smallerStats.distanceKm,
-                routeDurationMin: smallerStats.durationMin,
-                userCount: bestUsers.length,
-              });
-            }
-            setGenerating(false);
-            return;
-          }
+          bestResult = {
+            pickup: pickupCluster,
+            dropoff: dropoffCluster,
+            routeDistanceKm: routeStats?.distanceKm ?? 0,
+            routeDurationMin: routeStats?.durationMin ?? 0,
+            userCount: clusterUsers.length,
+            violations,
+          };
         }
       }
-
-      // Show result (even if over time limit, with warning)
-      pickupCluster.userIds = clusterUsers.map(u => u.id);
-      setPreview({
-        pickup: pickupCluster,
-        dropoff: dropoffCluster,
-        routeDistanceKm: routeStats.distanceKm,
-        routeDurationMin: routeStats.durationMin,
-        userCount: clusterUsers.length,
-      });
-    } else {
-      // Fallback to straight-line estimate
-      let totalDist = 0;
-      clusterUsers.forEach(u => {
-        totalDist += getDistance(u.originLat, u.originLng, u.destinationLat, u.destinationLng);
-      });
-      pickupCluster.userIds = clusterUsers.map(u => u.id);
-      setPreview({
-        pickup: pickupCluster,
-        dropoff: dropoffCluster,
-        routeDistanceKm: totalDist / clusterUsers.length / 1000,
-        routeDurationMin: 0,
-        userCount: clusterUsers.length,
-      });
     }
 
+    setPreview(bestResult);
     setGenerating(false);
   };
 
@@ -287,7 +329,7 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
     onClose();
   };
 
-  const overTime = preview && preview.routeDurationMin > maxTripMin;
+  const hasViolations = preview && preview.violations.length > 0;
 
   return (
     <div className="space-y-3">
@@ -304,7 +346,10 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
       {/* Target people */}
       <div className="space-y-1">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] text-muted-foreground">Target people</span>
+          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+            <LockToggle locked={locks.people} onToggle={() => toggleLock('people')} />
+            Target people {locks.people && <span className="text-primary font-bold">≥</span>}
+          </span>
           <span className="text-[10px] font-bold text-foreground">{targetPeople}</span>
         </div>
         <Slider
@@ -317,10 +362,13 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
         />
       </div>
 
-      {/* Max trip duration - PRIMARY constraint */}
+      {/* Max trip duration */}
       <div className="space-y-1">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] text-muted-foreground font-bold">⏱️ Max trip duration</span>
+          <span className="text-[10px] text-muted-foreground font-bold flex items-center gap-1">
+            <LockToggle locked={locks.duration} onToggle={() => toggleLock('duration')} />
+            ⏱️ Max trip duration {locks.duration && <span className="text-primary font-bold">≤</span>}
+          </span>
           <span className="text-[10px] font-bold text-foreground">{maxTripMin} min</span>
         </div>
         <Slider
@@ -336,7 +384,10 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
       {/* Max pickup radius */}
       <div className="space-y-1">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] text-muted-foreground">Max pickup radius</span>
+          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+            <LockToggle locked={locks.pickupRadius} onToggle={() => toggleLock('pickupRadius')} />
+            Max pickup radius {locks.pickupRadius && <span className="text-primary font-bold">≤</span>}
+          </span>
           <span className="text-[10px] font-bold text-foreground">{maxPickupRadiusKm} km</span>
         </div>
         <Slider
@@ -352,7 +403,10 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
       {/* Max dropoff radius */}
       <div className="space-y-1">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] text-muted-foreground">Max dropoff radius</span>
+          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+            <LockToggle locked={locks.dropoffRadius} onToggle={() => toggleLock('dropoffRadius')} />
+            Max dropoff radius {locks.dropoffRadius && <span className="text-primary font-bold">≤</span>}
+          </span>
           <span className="text-[10px] font-bold text-foreground">{maxDropoffRadiusKm} km</span>
         </div>
         <Slider
@@ -363,6 +417,12 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
           onValueChange={([v]) => { setMaxDropoffRadiusKm(v); setPreview(null); }}
           className="w-full"
         />
+      </div>
+
+      {/* Lock legend */}
+      <div className="flex items-center gap-3 text-[9px] text-muted-foreground">
+        <span className="flex items-center gap-0.5"><Lock className="w-2.5 h-2.5 text-primary" /> = strict</span>
+        <span className="flex items-center gap-0.5"><Unlock className="w-2.5 h-2.5 text-muted-foreground/40" /> = flexible</span>
       </div>
 
       {/* Pair name */}
@@ -386,14 +446,17 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
 
       {/* Preview results */}
       {preview && (
-        <div className={`rounded-lg p-2 space-y-1.5 border ${overTime ? 'bg-destructive/10 border-destructive/30' : 'bg-muted/30 border-border'}`}>
+        <div className={`rounded-lg p-2 space-y-1.5 border ${hasViolations ? 'bg-destructive/10 border-destructive/30' : 'bg-muted/30 border-border'}`}>
           <div className="text-[10px] font-bold text-foreground">
-            {overTime ? '⚠️ Closest fit (exceeds time limit)' : '✅ Recommendation'}
+            {hasViolations ? '⚠️ Best fit (some constraints relaxed)' : '✅ Recommendation'}
           </div>
           <div className="grid grid-cols-2 gap-2 text-[10px]">
             <div>
               <span className="text-muted-foreground">People: </span>
-              <span className="font-bold text-foreground">{preview.userCount}</span>
+              <span className={`font-bold ${locks.people && preview.userCount < targetPeople ? 'text-destructive' : 'text-foreground'}`}>
+                {preview.userCount}
+              </span>
+              {locks.people && <Lock className="w-2 h-2 inline ml-0.5 text-primary" />}
             </div>
             <div>
               <span className="text-muted-foreground">Route: </span>
@@ -401,9 +464,10 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
             </div>
             <div>
               <span className="text-muted-foreground">Duration: </span>
-              <span className={`font-bold ${overTime ? 'text-destructive' : 'text-foreground'}`}>
+              <span className={`font-bold ${preview.routeDurationMin > maxTripMin ? 'text-destructive' : 'text-foreground'}`}>
                 {preview.routeDurationMin} min
               </span>
+              {locks.duration && <Lock className="w-2 h-2 inline ml-0.5 text-primary" />}
             </div>
             <div>
               <span className="text-muted-foreground">Max: </span>
@@ -411,16 +475,22 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
             </div>
             <div>
               <span className="text-muted-foreground">PU radius: </span>
-              <span className="font-bold text-foreground">{(preview.pickup.radius / 1000).toFixed(1)} km</span>
+              <span className={`font-bold ${preview.pickup.radius > maxPickupRadiusKm * 1000 ? 'text-destructive' : 'text-foreground'}`}>
+                {(preview.pickup.radius / 1000).toFixed(1)} km
+              </span>
+              {locks.pickupRadius && <Lock className="w-2 h-2 inline ml-0.5 text-primary" />}
             </div>
             <div>
               <span className="text-muted-foreground">DO radius: </span>
-              <span className="font-bold text-foreground">{(preview.dropoff.radius / 1000).toFixed(1)} km</span>
+              <span className={`font-bold ${preview.dropoff.radius > maxDropoffRadiusKm * 1000 ? 'text-destructive' : 'text-foreground'}`}>
+                {(preview.dropoff.radius / 1000).toFixed(1)} km
+              </span>
+              {locks.dropoffRadius && <Lock className="w-2 h-2 inline ml-0.5 text-primary" />}
             </div>
           </div>
-          {overTime && (
+          {hasViolations && (
             <p className="text-[9px] text-destructive">
-              Could not find {targetPeople} people within {maxTripMin} min. Try increasing time or reducing people.
+              {preview.violations.join('. ')}. Try adjusting constraints or unlocking fields.
             </p>
           )}
           <Button size="sm" className="w-full gap-1 text-xs mt-1" onClick={handleApply}>
@@ -430,7 +500,7 @@ const ZoneRecommender = ({ users, onCreateZonePair, onClose }: ZoneRecommenderPr
       )}
 
       <p className="text-[9px] text-muted-foreground">
-        Uses Google Maps driving directions to calculate real route distance and duration — matches Show Routes exactly.
+        🔒 Locked = must match exactly. 🔓 Unlocked = algorithm can flex this to find the best fit.
       </p>
     </div>
   );
