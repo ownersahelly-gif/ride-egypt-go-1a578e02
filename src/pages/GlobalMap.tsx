@@ -29,7 +29,7 @@ const GlobalMap = () => {
   const [loading, setLoading] = useState(true);
 
   // UI state
-  const [filters, setFilters] = useState<FilterState>({ timeFrom: '', timeTo: '', days: [] });
+  const [filters, setFilters] = useState<FilterState>({ timeFrom: '', timeTo: '', days: [], commonDaysOnly: false });
   const [showFilters, setShowFilters] = useState(false);
   const [hiddenUserIds, setHiddenUserIds] = useState<Set<string>>(new Set());
   const [selectedUser, setSelectedUser] = useState<RouteRequestUser | null>(null);
