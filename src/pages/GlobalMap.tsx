@@ -371,6 +371,63 @@ const GlobalMap = () => {
     setLoadingRoutes(false);
   }, [showConnectedRoutes, filteredUsers, toast]);
 
+  // Auto-recalculate connected routes after marker drag
+  const recalculateConnectedRoutes = useCallback(async (users: RouteRequestUser[]) => {
+    if (!showConnectedRoutes || users.length < 2) return;
+    setLoadingRoutes(true);
+    const ds = new google.maps.DirectionsService();
+    const results: google.maps.DirectionsResult[] = [];
+
+    try {
+      const pickupPoints = users.map(u => ({ lat: u.originLat, lng: u.originLng }));
+      if (pickupPoints.length >= 2 && pickupPoints.length <= 25) {
+        try {
+          const pickupRoute = await ds.route({
+            origin: new google.maps.LatLng(pickupPoints[0].lat, pickupPoints[0].lng),
+            destination: new google.maps.LatLng(pickupPoints[pickupPoints.length - 1].lat, pickupPoints[pickupPoints.length - 1].lng),
+            waypoints: pickupPoints.slice(1, -1).map(p => ({ location: new google.maps.LatLng(p.lat, p.lng), stopover: true })),
+            optimizeWaypoints: true,
+            travelMode: google.maps.TravelMode.DRIVING,
+          });
+          results.push(pickupRoute);
+        } catch (e) { console.error('Pickup recalc failed:', e); }
+      }
+
+      const dropoffPoints = users.map(u => ({ lat: u.destinationLat, lng: u.destinationLng }));
+      if (dropoffPoints.length >= 2 && dropoffPoints.length <= 25) {
+        try {
+          const dropoffRoute = await ds.route({
+            origin: new google.maps.LatLng(dropoffPoints[0].lat, dropoffPoints[0].lng),
+            destination: new google.maps.LatLng(dropoffPoints[dropoffPoints.length - 1].lat, dropoffPoints[dropoffPoints.length - 1].lng),
+            waypoints: dropoffPoints.slice(1, -1).map(p => ({ location: new google.maps.LatLng(p.lat, p.lng), stopover: true })),
+            optimizeWaypoints: true,
+            travelMode: google.maps.TravelMode.DRIVING,
+          });
+          results.push(dropoffRoute);
+        } catch (e) { console.error('Dropoff recalc failed:', e); }
+      }
+
+      // Bridge
+      if (results.length >= 2) {
+        const lastPickupLeg = results[0].routes[0]?.legs;
+        const lastPickup = lastPickupLeg?.[lastPickupLeg.length - 1]?.end_location;
+        const firstDropoff = results[1]?.routes[0]?.legs?.[0]?.start_location;
+        if (lastPickup && firstDropoff) {
+          try {
+            const bridge = await ds.route({ origin: lastPickup, destination: firstDropoff, travelMode: google.maps.TravelMode.DRIVING });
+            results.splice(1, 0, bridge);
+          } catch (e) { console.error('Bridge recalc failed:', e); }
+        }
+      }
+    } catch (err) { console.error('Recalculate error:', err); }
+
+    setConnectedDirections(results);
+    let totalDist = 0, totalDur = 0;
+    results.forEach(dir => { dir.routes[0]?.legs?.forEach(l => { totalDist += l.distance?.value || 0; totalDur += l.duration?.value || 0; }); });
+    setConnectedRouteInfo({ distance: `${(totalDist / 1000).toFixed(1)} km`, duration: `${Math.round(totalDur / 60)} min` });
+    setLoadingRoutes(false);
+  }, [showConnectedRoutes]);
+
   // Save route
   const handleSaveRoute = async () => {
     if (!startPoint || !endPoint || !routeNameEn) return;
