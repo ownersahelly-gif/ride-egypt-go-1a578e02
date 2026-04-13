@@ -1,0 +1,1 @@
+DELETE FROM public.bookings WHERE user_id = '8cae77ab-3d55-4a69-b316-90ec593d2a81';

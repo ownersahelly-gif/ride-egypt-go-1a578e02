@@ -41,6 +41,7 @@ const BookRide = () => {
   const [allRouteStops, setAllRouteStops] = useState<Record<string, any[]>>({});
   const [driverRatings, setDriverRatings] = useState<Record<string, { avg: number; count: number }>>({});
   const [step, setStep] = useState<'browse' | 'details' | 'confirm'>('browse');
+  const [userBookedRides, setUserBookedRides] = useState<Set<string>>(new Set());
 
   // Pickup
   const [pickupMode, setPickupMode] = useState<'start' | 'stop'>('start');
@@ -177,6 +178,22 @@ const BookRide = () => {
     }
 
     setRideInstances(allResults);
+
+    // Check which rides the user has already booked
+    if (user && allResults.length > 0) {
+      const { data: userBookings } = await supabase
+        .from('bookings')
+        .select('route_id, scheduled_date, scheduled_time')
+        .eq('user_id', user.id)
+        .eq('scheduled_date', date)
+        .not('status', 'eq', 'cancelled');
+      const bookedKeys = new Set<string>();
+      (userBookings || []).forEach(b => {
+        bookedKeys.add(`${b.route_id}_${b.scheduled_date}_${b.scheduled_time}`);
+      });
+      setUserBookedRides(bookedKeys);
+    }
+
     setLoadingRides(false);
   };
 
@@ -816,9 +833,13 @@ const BookRide = () => {
                 </div>
               ) : filteredRides.length > 0 ? (
                 <div className="space-y-3">
-                  {filteredRides.map((ride) => (
-                    <button key={ride.id} onClick={() => selectRide(ride)}
-                      className="w-full text-start bg-card border border-border rounded-xl p-5 hover:border-secondary/40 hover:shadow-card-hover transition-all">
+                  {filteredRides.map((ride) => {
+                    const rideDate = ride.ride_date || ride.trip_date;
+                    const rideKey = `${ride.route_id}_${rideDate}_${ride.departure_time}`;
+                    const isAlreadyBooked = userBookedRides.has(rideKey);
+                    return (
+                    <button key={ride.id} onClick={() => isAlreadyBooked ? navigate('/my-bookings') : selectRide(ride)}
+                      className={`w-full text-start bg-card border rounded-xl p-5 transition-all ${isAlreadyBooked ? 'border-green-500/50 bg-green-50/50 dark:bg-green-950/20' : 'border-border hover:border-secondary/40 hover:shadow-card-hover'}`}>
                       {ride._type === 'published' ? (
                         <>
                           <div className="flex items-center gap-3 mb-3">
@@ -831,7 +852,11 @@ const BookRide = () => {
                               </p>
                               <p className="text-xs text-muted-foreground">{lang === 'ar' ? 'احجز مقعدك — سيتم التواصل معك للسعر' : 'Book your seat — we\'ll get back with the price'}</p>
                             </div>
-                            <span className="px-2.5 py-1 rounded-full bg-secondary/10 text-secondary text-xs font-medium">{lang === 'ar' ? 'مخطط' : 'Planned'}</span>
+                            {isAlreadyBooked ? (
+                              <span className="px-2.5 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-xs font-medium">{lang === 'ar' ? '✓ محجوز' : '✓ Booked'}</span>
+                            ) : (
+                              <span className="px-2.5 py-1 rounded-full bg-secondary/10 text-secondary text-xs font-medium">{lang === 'ar' ? 'مخطط' : 'Planned'}</span>
+                            )}
                           </div>
                         </>
                       ) : (
@@ -859,12 +884,16 @@ const BookRide = () => {
                               </div>
                             )}
                           </div>
-                          <span className="text-lg font-bold text-primary">{ride.routes?.price} EGP</span>
+                          {isAlreadyBooked ? (
+                            <span className="px-2.5 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-xs font-medium">{lang === 'ar' ? '✓ محجوز' : '✓ Booked'}</span>
+                          ) : (
+                            <span className="text-lg font-bold text-primary">{ride.routes?.price} EGP</span>
+                          )}
                         </div>
                       )}
                       <h3 className="font-semibold text-foreground text-sm mb-2">
                         {lang === 'ar' ? ride.routes?.name_ar : ride.routes?.name_en}
-                        {ride._type === 'published' && (
+                        {ride._type === 'published' && !isAlreadyBooked && (
                           <span className="text-xs ms-2 px-2 py-0.5 rounded-full bg-secondary/10 text-secondary font-medium">
                             {lang === 'ar' ? 'رحلة مخططة' : 'Planned Trip'}
                           </span>
@@ -900,18 +929,24 @@ const BookRide = () => {
                           {ride.available_seats}/{ride.total_seats} {lang === 'ar' ? 'متاح' : 'left'}
                         </span>
                       </div>
-                      {ride._type !== 'published' && ride.available_seats <= 3 && ride.available_seats > 0 && (
+                      {isAlreadyBooked && (
+                        <div className="mt-2 flex items-center gap-1 text-xs text-green-600 font-medium">
+                          <CheckCircle2 className="w-3 h-3" />{lang === 'ar' ? 'لقد حجزت هذه الرحلة — اضغط لعرض حجوزاتك' : 'Already booked — tap to view your bookings'}
+                        </div>
+                      )}
+                      {!isAlreadyBooked && ride._type !== 'published' && ride.available_seats <= 3 && ride.available_seats > 0 && (
                         <div className="mt-2 flex items-center gap-1 text-xs text-destructive font-medium">
                           <AlertCircle className="w-3 h-3" />{lang === 'ar' ? 'عدد قليل!' : 'Few seats left!'}
                         </div>
                       )}
-                      {ride._type !== 'published' && ride.available_seats === 0 && (
+                      {!isAlreadyBooked && ride._type !== 'published' && ride.available_seats === 0 && (
                         <div className="mt-2 flex items-center gap-1 text-xs text-destructive font-medium">
                           <AlertCircle className="w-3 h-3" />{lang === 'ar' ? 'مكتمل' : 'Full'}
                         </div>
                       )}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="bg-card rounded-2xl border border-border p-12 text-center">
