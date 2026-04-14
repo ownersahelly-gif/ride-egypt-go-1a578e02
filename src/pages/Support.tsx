@@ -49,7 +49,7 @@ const Support = () => {
   return (
     <div className="min-h-screen bg-background fixed inset-0 overflow-y-auto" dir={isAr ? 'rtl' : 'ltr'}>
       {/* Header */}
-      <header className="bg-card border-b border-border sticky top-0 z-40">
+      <header className="bg-card border-b border-border sticky top-0 z-40 safe-area-top">
         <div className="container mx-auto flex items-center h-16 px-4 gap-3">
           <Link to="/">
             <Button variant="ghost" size="icon">
