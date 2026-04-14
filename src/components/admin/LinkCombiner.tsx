@@ -24,54 +24,47 @@ interface ParsedLink {
  */
 function parseGoogleMapsLink(url: string): { origin: { lat: number; lng: number; name?: string }; destination: { lat: number; lng: number; name?: string } } | null {
   try {
-    // Format: /dir/origin/destination or /dir/origin/destination/@...
-    const dirMatch = url.match(/\/dir\/([^/]+)\/([^/]+)/);
-    if (dirMatch) {
-      const parsePoint = (s: string): { lat: number; lng: number; name?: string } | null => {
-        // Try lat,lng format
-        const coordMatch = s.match(/^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/);
-        if (coordMatch) {
-          return { lat: parseFloat(coordMatch[1]), lng: parseFloat(coordMatch[2]) };
-        }
-        // It's a place name — try to extract coords from the @ portion later
-        return null;
-      };
+    // Decode URL first
+    let decoded = url;
+    try { decoded = decodeURIComponent(url); } catch { /* keep original */ }
 
-      const origin = parsePoint(decodeURIComponent(dirMatch[1]));
-      const destination = parsePoint(decodeURIComponent(dirMatch[2]));
+    // 1. Extract !3d(lat)!4d(lng) pairs (most reliable for place-based links)
+    const dataCoords: { lat: number; lng: number }[] = [];
+    const dataRegex = /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/g;
+    let dm;
+    while ((dm = dataRegex.exec(url)) !== null) {
+      dataCoords.push({ lat: parseFloat(dm[1]), lng: parseFloat(dm[2]) });
+    }
 
-      // Try to get coords from the @ portion of the URL
-      const atMatch = url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-
-      if (origin && destination) {
-        return { origin, destination };
-      }
-
-      // If we have place names, look for data= parameters with coordinates
-      const allCoords: { lat: number; lng: number }[] = [];
-      const coordRegex = /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/g;
-      let match;
-      while ((match = coordRegex.exec(url)) !== null) {
-        allCoords.push({ lat: parseFloat(match[1]), lng: parseFloat(match[2]) });
-      }
-
-      if (allCoords.length >= 2) {
-        return {
-          origin: { ...allCoords[0], name: decodeURIComponent(dirMatch[1]).replace(/\+/g, ' ') },
-          destination: { ...allCoords[allCoords.length - 1], name: decodeURIComponent(dirMatch[2]).replace(/\+/g, ' ') },
-        };
-      }
-
-      // Fallback: if one is coord and we have @ for the other
-      if (origin && !destination && atMatch) {
-        return { origin, destination: { lat: parseFloat(atMatch[1]), lng: parseFloat(atMatch[2]), name: decodeURIComponent(dirMatch[2]).replace(/\+/g, ' ') } };
-      }
-      if (!origin && destination && atMatch) {
-        return { origin: { lat: parseFloat(atMatch[1]), lng: parseFloat(atMatch[2]), name: decodeURIComponent(dirMatch[1]).replace(/\+/g, ' ') }, destination };
+    // Extract place names from /dir/ path
+    const dirSegments = decoded.match(/\/dir\/(.+?)(?:\/@|$)/);
+    let placeNames: string[] = [];
+    if (dirSegments) {
+      const raw = dirSegments[1];
+      // Split on RTL/LTR marks used as segment separators
+      const parts = raw.split(/[\u200E\u200F\u202C\u202D]/).map(s => s.replace(/^\/+|\/+$/g, '').replace(/\+/g, ' ').trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        placeNames = [parts[0].substring(0, 60), parts[parts.length - 1].substring(0, 60)];
       }
     }
 
-    // Format: saddr/daddr query params
+    if (dataCoords.length >= 2) {
+      return {
+        origin: { ...dataCoords[0], name: placeNames[0] || undefined },
+        destination: { ...dataCoords[dataCoords.length - 1], name: placeNames[1] || undefined },
+      };
+    }
+
+    // 2. Simple /dir/lat,lng/lat,lng format
+    const simpleDir = url.match(/\/dir\/(-?\d+\.?\d*),(-?\d+\.?\d*)\/(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (simpleDir) {
+      return {
+        origin: { lat: parseFloat(simpleDir[1]), lng: parseFloat(simpleDir[2]) },
+        destination: { lat: parseFloat(simpleDir[3]), lng: parseFloat(simpleDir[4]) },
+      };
+    }
+
+    // 3. saddr/daddr query params
     const saddrMatch = url.match(/[?&]saddr=([^&]+)/);
     const daddrMatch = url.match(/[?&]daddr=([^&]+)/);
     if (saddrMatch && daddrMatch) {
@@ -84,22 +77,16 @@ function parseGoogleMapsLink(url: string): { origin: { lat: number; lng: number;
       if (o && d) return { origin: o, destination: d };
     }
 
-    // Try extracting all coordinate pairs from the URL
+    // 4. Fallback: any coordinate-like pairs
     const allCoords: { lat: number; lng: number }[] = [];
-    const patterns = [
-      /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/g,
-      /(-?\d{1,3}\.\d{4,}),\s*(-?\d{1,3}\.\d{4,})/g,
-    ];
-    for (const pattern of patterns) {
-      let m;
-      while ((m = pattern.exec(url)) !== null) {
-        const lat = parseFloat(m[1]);
-        const lng = parseFloat(m[2]);
-        if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
-          // Avoid duplicates
-          if (!allCoords.some(c => Math.abs(c.lat - lat) < 0.0001 && Math.abs(c.lng - lng) < 0.0001)) {
-            allCoords.push({ lat, lng });
-          }
+    const coordRegex = /(-?\d{1,3}\.\d{4,}),\s*(-?\d{1,3}\.\d{4,})/g;
+    let cm;
+    while ((cm = coordRegex.exec(url)) !== null) {
+      const lat = parseFloat(cm[1]);
+      const lng = parseFloat(cm[2]);
+      if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+        if (!allCoords.some(c => Math.abs(c.lat - lat) < 0.0001 && Math.abs(c.lng - lng) < 0.0001)) {
+          allCoords.push({ lat, lng });
         }
       }
     }
