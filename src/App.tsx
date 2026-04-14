@@ -38,6 +38,11 @@ import { useIncomingCall } from "./hooks/useIncomingCall";
 
 const queryClient = new QueryClient();
 
+const IncomingCallListener = () => {
+  useIncomingCall();
+  return null;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <LanguageProvider>
@@ -47,6 +52,7 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <IncomingCallListener />
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/login" element={<Login />} />
@@ -74,6 +80,7 @@ const App = () => (
               <Route path="/support" element={<Support />} />
               <Route path="/partner" element={<ProtectedRoute><PartnerDashboard /></ProtectedRoute>} />
               <Route path="/admin/global-map" element={<ProtectedRoute><GlobalMap /></ProtectedRoute>} />
+              <Route path="/incoming-call" element={<IncomingCall />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
