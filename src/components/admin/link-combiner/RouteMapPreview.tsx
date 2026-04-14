@@ -1,7 +1,7 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GoogleMap, Marker, Polyline } from '@react-google-maps/api';
 import { Button } from '@/components/ui/button';
-import { Copy, ExternalLink, MapPin, Trash2, GripVertical } from 'lucide-react';
+import { Copy, ExternalLink, MapPin, Trash2, GripVertical, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { OrderedStop } from './types';
 import { buildGoogleMapsLink, haversine } from './utils';
@@ -19,6 +19,68 @@ const RouteMapPreview = ({ stops, onReorder, lang }: Props) => {
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
   const dragRef = useRef<number | null>(null);
+  const [routePath, setRoutePath] = useState<google.maps.LatLngLiteral[]>([]);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeDistance, setRouteDistance] = useState<number | null>(null);
+  const [routeDuration, setRouteDuration] = useState<number | null>(null);
+
+  // Fetch real road directions whenever stops change
+  useEffect(() => {
+    if (stops.length < 2) {
+      setRoutePath([]);
+      setRouteDistance(null);
+      setRouteDuration(null);
+      return;
+    }
+
+    const directionsService = new google.maps.DirectionsService();
+    const origin = { lat: stops[0].lat, lng: stops[0].lng };
+    const destination = { lat: stops[stops.length - 1].lat, lng: stops[stops.length - 1].lng };
+
+    // Google Directions supports max 25 waypoints
+    const waypoints = stops.slice(1, -1).map(s => ({
+      location: { lat: s.lat, lng: s.lng },
+      stopover: true,
+    }));
+
+    setRouteLoading(true);
+
+    directionsService.route(
+      {
+        origin,
+        destination,
+        waypoints: waypoints.slice(0, 25),
+        travelMode: google.maps.TravelMode.DRIVING,
+        optimizeWaypoints: false, // keep user's order
+      },
+      (result, status) => {
+        setRouteLoading(false);
+        if (status === 'OK' && result) {
+          // Extract full polyline path from all legs
+          const path: google.maps.LatLngLiteral[] = [];
+          let totalDist = 0;
+          let totalDur = 0;
+          result.routes[0].legs.forEach(leg => {
+            leg.steps.forEach(step => {
+              step.path.forEach(point => {
+                path.push({ lat: point.lat(), lng: point.lng() });
+              });
+            });
+            totalDist += leg.distance?.value || 0;
+            totalDur += leg.duration?.value || 0;
+          });
+          setRoutePath(path);
+          setRouteDistance(totalDist / 1000); // km
+          setRouteDuration(Math.round(totalDur / 60)); // minutes
+        } else {
+          // Fallback to straight lines
+          setRoutePath(stops.map(s => ({ lat: s.lat, lng: s.lng })));
+          setRouteDistance(null);
+          setRouteDuration(null);
+        }
+      }
+    );
+  }, [stops]);
 
   const center = useMemo(() => {
     if (stops.length === 0) return { lat: 30.05, lng: 31.25 };
@@ -27,7 +89,7 @@ const RouteMapPreview = ({ stops, onReorder, lang }: Props) => {
     return { lat, lng };
   }, [stops]);
 
-  const totalDistance = useMemo(() => {
+  const straightDistance = useMemo(() => {
     let d = 0;
     for (let i = 1; i < stops.length; i++) {
       d += haversine(stops[i - 1], stops[i]);
@@ -71,19 +133,23 @@ const RouteMapPreview = ({ stops, onReorder, lang }: Props) => {
     setOverIdx(null);
   };
 
-  const finalLink = buildGoogleMapsLink(stops);
+  const finalLink = useMemo(() => buildGoogleMapsLink(stops), [stops]);
 
   const copyLink = () => {
     navigator.clipboard.writeText(finalLink);
     toast.success(lang === 'ar' ? 'تم النسخ!' : 'Copied!');
   };
 
-  const path = stops.map(s => ({ lat: s.lat, lng: s.lng }));
-
   return (
     <div className="space-y-4">
       {/* Map */}
-      <div className="rounded-lg overflow-hidden border border-border" style={{ height: 350 }}>
+      <div className="rounded-lg overflow-hidden border border-border relative" style={{ height: 350 }}>
+        {routeLoading && (
+          <div className="absolute top-2 left-2 z-10 bg-background/80 rounded-md px-2 py-1 flex items-center gap-1 text-xs text-muted-foreground">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            {lang === 'ar' ? 'جارِ تحميل المسار...' : 'Loading route...'}
+          </div>
+        )}
         <GoogleMap
           mapContainerStyle={{ width: '100%', height: '100%' }}
           center={center}
@@ -112,13 +178,13 @@ const RouteMapPreview = ({ stops, onReorder, lang }: Props) => {
               }}
             />
           ))}
-          {path.length >= 2 && (
+          {routePath.length >= 2 && (
             <Polyline
-              path={path}
+              path={routePath}
               options={{
-                strokeColor: 'hsl(var(--primary))',
-                strokeOpacity: 0.8,
-                strokeWeight: 3,
+                strokeColor: '#4285F4',
+                strokeOpacity: 0.9,
+                strokeWeight: 4,
                 geodesic: true,
               }}
             />
@@ -127,9 +193,20 @@ const RouteMapPreview = ({ stops, onReorder, lang }: Props) => {
       </div>
 
       {/* Stats */}
-      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+      <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
         <span>{stops.length} {lang === 'ar' ? 'محطة' : 'stops'}</span>
-        <span>~{totalDistance.toFixed(1)} km {lang === 'ar' ? 'مسافة مباشرة' : 'straight-line'}</span>
+        {routeDistance !== null ? (
+          <span className="font-medium text-foreground">
+            {routeDistance.toFixed(1)} km {lang === 'ar' ? 'بالطريق' : 'by road'}
+          </span>
+        ) : (
+          <span>~{straightDistance.toFixed(1)} km {lang === 'ar' ? 'مسافة مباشرة' : 'straight-line'}</span>
+        )}
+        {routeDuration !== null && (
+          <span className="font-medium text-foreground">
+            ~{routeDuration} {lang === 'ar' ? 'دقيقة' : 'min'}
+          </span>
+        )}
       </div>
 
       {/* Draggable stop list */}
