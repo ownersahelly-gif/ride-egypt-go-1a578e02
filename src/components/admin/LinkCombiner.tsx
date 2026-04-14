@@ -9,108 +9,59 @@ import { toast } from 'sonner';
 interface ParsedLink {
   id: string;
   raw: string;
-  origin: { lat: number; lng: number; name?: string } | null;
-  destination: { lat: number; lng: number; name?: string } | null;
+  origin: { lat: number; lng: number; name: string } | null;
+  destination: { lat: number; lng: number; name: string } | null;
   error?: string;
 }
 
-/**
- * Extracts origin/destination coordinates from various Google Maps link formats.
- * Supports:
- * - /dir/lat,lng/lat,lng
- * - /dir/Place+Name/Place+Name/@lat,lng
- * - ?saddr=lat,lng&daddr=lat,lng
- * - /place/.../@lat,lng
- */
-function parseGoogleMapsLink(url: string): { origin: { lat: number; lng: number; name?: string }; destination: { lat: number; lng: number; name?: string } } | null {
-  try {
-    // Decode URL first
-    let decoded = url;
-    try { decoded = decodeURIComponent(url); } catch { /* keep original */ }
-
-    // 1. Extract !3d(lat)!4d(lng) pairs (most reliable for place-based links)
-    const dataCoords: { lat: number; lng: number }[] = [];
-    const dataRegex = /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/g;
-    let dm;
-    while ((dm = dataRegex.exec(url)) !== null) {
-      dataCoords.push({ lat: parseFloat(dm[1]), lng: parseFloat(dm[2]) });
-    }
-
-    // Extract place names from /dir/ path
-    const dirSegments = decoded.match(/\/dir\/(.+?)(?:\/@|$)/);
-    let placeNames: string[] = [];
-    if (dirSegments) {
-      const raw = dirSegments[1];
-      // Split on RTL/LTR marks used as segment separators
-      const parts = raw.split(/[\u200E\u200F\u202C\u202D]/).map(s => s.replace(/^\/+|\/+$/g, '').replace(/\+/g, ' ').trim()).filter(Boolean);
-      if (parts.length >= 2) {
-        placeNames = [parts[0].substring(0, 60), parts[parts.length - 1].substring(0, 60)];
-      }
-    }
-
-    if (dataCoords.length >= 2) {
-      return {
-        origin: { ...dataCoords[0], name: placeNames[0] || undefined },
-        destination: { ...dataCoords[dataCoords.length - 1], name: placeNames[1] || undefined },
-      };
-    }
-
-    // 2. Simple /dir/lat,lng/lat,lng format
-    const simpleDir = url.match(/\/dir\/(-?\d+\.?\d*),(-?\d+\.?\d*)\/(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-    if (simpleDir) {
-      return {
-        origin: { lat: parseFloat(simpleDir[1]), lng: parseFloat(simpleDir[2]) },
-        destination: { lat: parseFloat(simpleDir[3]), lng: parseFloat(simpleDir[4]) },
-      };
-    }
-
-    // 3. saddr/daddr query params
-    const saddrMatch = url.match(/[?&]saddr=([^&]+)/);
-    const daddrMatch = url.match(/[?&]daddr=([^&]+)/);
-    if (saddrMatch && daddrMatch) {
-      const parseCoord = (s: string) => {
-        const m = decodeURIComponent(s).match(/(-?\d+\.?\d*),\s*(-?\d+\.?\d*)/);
-        return m ? { lat: parseFloat(m[1]), lng: parseFloat(m[2]) } : null;
-      };
-      const o = parseCoord(saddrMatch[1]);
-      const d = parseCoord(daddrMatch[1]);
-      if (o && d) return { origin: o, destination: d };
-    }
-
-    // 4. Fallback: any coordinate-like pairs
-    const allCoords: { lat: number; lng: number }[] = [];
-    const coordRegex = /(-?\d{1,3}\.\d{4,}),\s*(-?\d{1,3}\.\d{4,})/g;
-    let cm;
-    while ((cm = coordRegex.exec(url)) !== null) {
-      const lat = parseFloat(cm[1]);
-      const lng = parseFloat(cm[2]);
-      if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
-        if (!allCoords.some(c => Math.abs(c.lat - lat) < 0.0001 && Math.abs(c.lng - lng) < 0.0001)) {
-          allCoords.push({ lat, lng });
+/** Use Google Geocoder to resolve a segment (place name or coordinates) */
+function resolveSegment(seg: string): Promise<{ lat: number; lng: number; name: string }> {
+  return new Promise((resolve, reject) => {
+    const geocoder = new google.maps.Geocoder();
+    const coordMatch = seg.match(/^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/);
+    if (coordMatch) {
+      const lat = parseFloat(coordMatch[1]);
+      const lng = parseFloat(coordMatch[2]);
+      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+        const name = status === 'OK' && results?.[0] ? results[0].formatted_address : `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+        resolve({ lat, lng, name });
+      });
+    } else {
+      const decoded = decodeURIComponent(seg.replace(/\+/g, ' '));
+      geocoder.geocode({ address: decoded }, (results, status) => {
+        if (status === 'OK' && results?.[0]) {
+          const loc = results[0].geometry.location;
+          resolve({ lat: loc.lat(), lng: loc.lng(), name: results[0].formatted_address });
+        } else {
+          reject(new Error(`Could not find: ${decoded.substring(0, 40)}`));
         }
-      }
+      });
     }
+  });
+}
 
-    if (allCoords.length >= 2) {
-      return { origin: allCoords[0], destination: allCoords[allCoords.length - 1] };
-    }
+/** Parse a Google Maps directions URL and resolve origin/destination via Geocoder */
+async function parseGoogleMapsLink(url: string): Promise<{ origin: { lat: number; lng: number; name: string }; destination: { lat: number; lng: number; name: string } } | null> {
+  // Extract the path after /dir/
+  const dirMatch = url.match(/\/dir\/(.+?)(?:\/@|$|\?)/);
+  if (!dirMatch) return null;
 
-    return null;
-  } catch {
-    return null;
-  }
+  const segments = dirMatch[1].split('/').filter(s => s.trim() !== '');
+  if (segments.length < 2) return null;
+
+  const origin = await resolveSegment(segments[0]);
+  const destination = await resolveSegment(segments[segments.length - 1]);
+
+  return { origin, destination };
 }
 
 function generateCombinedGoogleMapsLink(links: ParsedLink[]): string | null {
   const valid = links.filter(l => l.origin && l.destination);
   if (valid.length === 0) return null;
 
-  // Collect all pickup and dropoff points
   const pickups = valid.map(l => l.origin!);
   const dropoffs = valid.map(l => l.destination!);
 
-  // Order: first pickup → other pickups → other dropoffs → last dropoff
-  // Use centroid-based ordering for a sensible route
   const orderByAngle = (points: { lat: number; lng: number }[]) => {
     if (points.length <= 1) return points;
     const cLat = points.reduce((s, p) => s + p.lat, 0) / points.length;
@@ -124,8 +75,6 @@ function generateCombinedGoogleMapsLink(links: ParsedLink[]): string | null {
 
   const orderedPickups = orderByAngle(pickups);
   const orderedDropoffs = orderByAngle(dropoffs);
-
-  // Build waypoints: origin = first pickup, destination = last dropoff, middle = waypoints
   const allPoints = [...orderedPickups, ...orderedDropoffs];
   const origin = allPoints[0];
   const destination = allPoints[allPoints.length - 1];
@@ -145,29 +94,42 @@ const LinkCombiner = ({ lang }: { lang: string }) => {
   const [inputValue, setInputValue] = useState('');
   const [combinedLink, setCombinedLink] = useState<string | null>(null);
   const [bulkInput, setBulkInput] = useState('');
+  const [parsing, setParsing] = useState(false);
 
-  const addLink = (raw: string) => {
+  const addLink = async (raw: string) => {
     const trimmed = raw.trim();
     if (!trimmed) return;
 
-    const parsed = parseGoogleMapsLink(trimmed);
-    const newLink: ParsedLink = {
-      id: crypto.randomUUID(),
-      raw: trimmed,
-      origin: parsed?.origin || null,
-      destination: parsed?.destination || null,
-      error: parsed ? undefined : (lang === 'ar' ? 'تعذر استخراج الإحداثيات' : 'Could not extract coordinates'),
-    };
-    setLinks(prev => [...prev, newLink]);
-    setCombinedLink(null);
+    setParsing(true);
+    try {
+      const parsed = await parseGoogleMapsLink(trimmed);
+      const newLink: ParsedLink = {
+        id: crypto.randomUUID(),
+        raw: trimmed,
+        origin: parsed?.origin || null,
+        destination: parsed?.destination || null,
+        error: parsed ? undefined : (lang === 'ar' ? 'تعذر استخراج الإحداثيات' : 'Could not extract coordinates'),
+      };
+      setLinks(prev => [...prev, newLink]);
+      setCombinedLink(null);
+    } catch (err: any) {
+      setLinks(prev => [...prev, {
+        id: crypto.randomUUID(),
+        raw: trimmed,
+        origin: null,
+        destination: null,
+        error: err.message || (lang === 'ar' ? 'تعذر استخراج الإحداثيات' : 'Could not extract coordinates'),
+      }]);
+    }
+    setParsing(false);
   };
 
-  const addBulkLinks = () => {
+  const addBulkLinks = async () => {
     const urls = bulkInput.split('\n').map(s => s.trim()).filter(Boolean);
-    for (const url of urls) {
-      addLink(url);
-    }
     setBulkInput('');
+    for (const url of urls) {
+      await addLink(url);
+    }
   };
 
   const removeLink = (id: string) => {
@@ -215,8 +177,9 @@ const LinkCombiner = ({ lang }: { lang: string }) => {
           placeholder={lang === 'ar' ? 'الصق رابط Google Maps هنا...' : 'Paste a Google Maps link here...'}
           value={inputValue}
           onChange={e => setInputValue(e.target.value)}
+          disabled={parsing}
           onKeyDown={e => {
-            if (e.key === 'Enter' && inputValue.trim()) {
+            if (e.key === 'Enter' && inputValue.trim() && !parsing) {
               addLink(inputValue);
               setInputValue('');
             }
@@ -224,10 +187,10 @@ const LinkCombiner = ({ lang }: { lang: string }) => {
         />
         <Button
           size="sm"
-          disabled={!inputValue.trim()}
+          disabled={!inputValue.trim() || parsing}
           onClick={() => { addLink(inputValue); setInputValue(''); }}
         >
-          <Plus className="w-4 h-4 me-1" />
+          {parsing ? <Loader2 className="w-4 h-4 animate-spin me-1" /> : <Plus className="w-4 h-4 me-1" />}
           {lang === 'ar' ? 'إضافة' : 'Add'}
         </Button>
       </div>
@@ -245,12 +208,20 @@ const LinkCombiner = ({ lang }: { lang: string }) => {
             value={bulkInput}
             onChange={e => setBulkInput(e.target.value)}
           />
-          <Button size="sm" variant="outline" onClick={addBulkLinks} disabled={!bulkInput.trim()}>
-            <Plus className="w-4 h-4 me-1" />
+          <Button size="sm" variant="outline" onClick={addBulkLinks} disabled={!bulkInput.trim() || parsing}>
+            {parsing ? <Loader2 className="w-4 h-4 animate-spin me-1" /> : <Plus className="w-4 h-4 me-1" />}
             {lang === 'ar' ? 'إضافة الكل' : 'Add All'}
           </Button>
         </div>
       </details>
+
+      {/* Parsing indicator */}
+      {parsing && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          {lang === 'ar' ? 'جارِ تحليل الرابط...' : 'Parsing link...'}
+        </div>
+      )}
 
       {/* Links list */}
       {links.length > 0 && (
@@ -270,16 +241,12 @@ const LinkCombiner = ({ lang }: { lang: string }) => {
                 {link.origin && link.destination ? (
                   <div className="flex-1 min-w-0 space-y-0.5">
                     <div className="flex items-center gap-1">
-                      <MapPin className="w-3 h-3 text-green-500 shrink-0" />
-                      <span className="truncate">
-                        {link.origin.name || `${link.origin.lat.toFixed(4)}, ${link.origin.lng.toFixed(4)}`}
-                      </span>
+                      <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
+                      <span className="truncate">{link.origin.name}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <MapPin className="w-3 h-3 text-red-500 shrink-0" />
-                      <span className="truncate">
-                        {link.destination.name || `${link.destination.lat.toFixed(4)}, ${link.destination.lng.toFixed(4)}`}
-                      </span>
+                      <MapPin className="w-3 h-3 text-destructive shrink-0" />
+                      <span className="truncate">{link.destination.name}</span>
                     </div>
                   </div>
                 ) : (
