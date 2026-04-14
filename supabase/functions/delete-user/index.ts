@@ -15,7 +15,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    // Verify caller is admin
+    // Verify caller
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -28,7 +28,6 @@ Deno.serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // Verify the caller using anon client
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const callerClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -43,19 +42,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check admin role
-    const { data: isAdmin } = await supabaseAdmin.rpc("has_role", {
-      _user_id: caller.id,
-      _role: "admin",
-    });
-    if (!isAdmin) {
-      return new Response(JSON.stringify({ error: "Admin access required" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const body = await req.json();
+    const user_id: string = body.user_id;
+    const self_delete: boolean = body.self_delete === true;
 
-    const { user_id } = await req.json();
     if (!user_id || typeof user_id !== "string") {
       return new Response(JSON.stringify({ error: "user_id is required" }), {
         status: 400,
@@ -63,18 +53,38 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Prevent self-deletion
-    if (user_id === caller.id) {
-      return new Response(JSON.stringify({ error: "Cannot delete yourself" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    // Authorization: either self-delete or admin
+    if (self_delete) {
+      if (user_id !== caller.id) {
+        return new Response(JSON.stringify({ error: "Cannot delete another user's account" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else {
+      // Admin path
+      const { data: isAdmin } = await supabaseAdmin.rpc("has_role", {
+        _user_id: caller.id,
+        _role: "admin",
       });
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Admin access required" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // Prevent admin self-deletion via admin path
+      if (user_id === caller.id) {
+        return new Response(JSON.stringify({ error: "Cannot delete yourself" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // Collect Bunny CDN paths to delete
     const bunnyPaths: string[] = [];
 
-    // 1. Get driver application docs
     const { data: driverApps } = await supabaseAdmin
       .from("driver_applications")
       .select("id_front_url, id_back_url, driving_license_url, car_license_url, criminal_record_url, uber_proof_url")
@@ -86,7 +96,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 2. Get carpool verification docs
     const { data: carpoolVerifs } = await supabaseAdmin
       .from("carpool_verifications")
       .select("id_front_url, id_back_url, driving_license_url, car_license_url, selfie_url")
@@ -98,7 +107,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 3. Get profile avatar
     const { data: profile } = await supabaseAdmin
       .from("profiles")
       .select("avatar_url")
@@ -107,7 +115,6 @@ Deno.serve(async (req) => {
 
     if (profile?.avatar_url) bunnyPaths.push(profile.avatar_url);
 
-    // 4. Get booking payment proofs
     const { data: bookingsData } = await supabaseAdmin
       .from("bookings")
       .select("id, payment_proof_url")
@@ -117,7 +124,6 @@ Deno.serve(async (req) => {
       if (b.payment_proof_url) bunnyPaths.push(b.payment_proof_url);
     }
 
-    // 5. Get bundle purchase proofs
     const { data: bundlePurchases } = await supabaseAdmin
       .from("bundle_purchases")
       .select("payment_proof_url")
@@ -136,10 +142,8 @@ Deno.serve(async (req) => {
     if (STORAGE_API_KEY && ZONE_NAME && REGION && CDN_HOSTNAME) {
       for (const cdnUrl of bunnyPaths) {
         try {
-          // Extract path from CDN URL: https://hostname/path → path
           const filePath = cdnUrl.replace(`https://${CDN_HOSTNAME}/`, "");
           if (!filePath || filePath === cdnUrl) continue;
-
           const storageUrl = `https://${REGION}/${ZONE_NAME}/${filePath}`;
           await fetch(storageUrl, {
             method: "DELETE",
@@ -151,40 +155,26 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Delete all related database records (order matters for FK constraints)
+    // Delete all related database records
     const bookingIds = (bookingsData || []).map((b) => b.id);
 
-    // Delete ride messages for user's bookings
     if (bookingIds.length > 0) {
       await supabaseAdmin.from("ride_messages").delete().in("booking_id", bookingIds);
     }
-    // Also delete messages sent by this user on other bookings
     await supabaseAdmin.from("ride_messages").delete().eq("sender_id", user_id);
 
-    // Delete ratings
     if (bookingIds.length > 0) {
       await supabaseAdmin.from("ratings").delete().in("booking_id", bookingIds);
     }
     await supabaseAdmin.from("ratings").delete().eq("user_id", user_id);
 
-    // Delete bookings
     await supabaseAdmin.from("bookings").delete().eq("user_id", user_id);
-
-    // Delete bundle purchases
     await supabaseAdmin.from("bundle_purchases").delete().eq("user_id", user_id);
-
-    // Delete saved locations
     await supabaseAdmin.from("saved_locations").delete().eq("user_id", user_id);
-
-    // Delete route requests
     await supabaseAdmin.from("route_requests").delete().eq("user_id", user_id);
-
-    // Delete device tokens
     await supabaseAdmin.from("device_tokens").delete().eq("user_id", user_id);
 
-    // Delete carpool data
     await supabaseAdmin.from("carpool_messages").delete().eq("sender_id", user_id);
-    // Get carpool route IDs owned by user
     const { data: carpoolRoutes } = await supabaseAdmin
       .from("carpool_routes")
       .select("id")
@@ -198,9 +188,7 @@ Deno.serve(async (req) => {
     await supabaseAdmin.from("carpool_routes").delete().eq("user_id", user_id);
     await supabaseAdmin.from("carpool_verifications").delete().eq("user_id", user_id);
 
-    // Delete driver-related data
     await supabaseAdmin.from("driver_applications").delete().eq("user_id", user_id);
-    // Get shuttle IDs for this driver
     const { data: driverShuttles } = await supabaseAdmin
       .from("shuttles")
       .select("id")
@@ -211,15 +199,10 @@ Deno.serve(async (req) => {
       await supabaseAdmin.from("driver_schedules").delete().in("shuttle_id", shuttleIds);
     }
     await supabaseAdmin.from("driver_schedules").delete().eq("driver_id", user_id);
-    // Delete ride instances created by this driver
     await supabaseAdmin.from("ride_instances").delete().eq("driver_id", user_id);
-    // Delete shuttles
     await supabaseAdmin.from("shuttles").delete().eq("driver_id", user_id);
 
-    // Delete user roles
     await supabaseAdmin.from("user_roles").delete().eq("user_id", user_id);
-
-    // Delete profile
     await supabaseAdmin.from("profiles").delete().eq("user_id", user_id);
 
     // Finally, delete the auth user
