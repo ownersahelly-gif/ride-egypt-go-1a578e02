@@ -55,38 +55,74 @@ async function parseGoogleMapsLink(url: string): Promise<{ origin: { lat: number
   return { origin, destination };
 }
 
+function haversine(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+}
+
 function generateCombinedGoogleMapsLink(links: ParsedLink[]): string | null {
   const valid = links.filter(l => l.origin && l.destination);
   if (valid.length === 0) return null;
 
-  const pickups = valid.map(l => l.origin!);
-  const dropoffs = valid.map(l => l.destination!);
+  // Build list of stops: each link has a pickup (P) and dropoff (D)
+  // Constraint: for each link, pickup must come before dropoff
+  type Stop = { lat: number; lng: number; linkIdx: number; type: 'P' | 'D' };
+  const allStops: Stop[] = [];
+  valid.forEach((l, i) => {
+    allStops.push({ lat: l.origin!.lat, lng: l.origin!.lng, linkIdx: i, type: 'P' });
+    allStops.push({ lat: l.destination!.lat, lng: l.destination!.lng, linkIdx: i, type: 'D' });
+  });
 
-  const orderByAngle = (points: { lat: number; lng: number }[]) => {
-    if (points.length <= 1) return points;
-    const cLat = points.reduce((s, p) => s + p.lat, 0) / points.length;
-    const cLng = points.reduce((s, p) => s + p.lng, 0) / points.length;
-    return [...points].sort((a, b) => {
-      const angleA = Math.atan2(a.lat - cLat, a.lng - cLng);
-      const angleB = Math.atan2(b.lat - cLat, b.lng - cLng);
-      return angleA - angleB;
-    });
-  };
+  // Nearest-neighbor with pickup-before-dropoff constraint
+  const ordered: Stop[] = [];
+  const remaining = new Set(allStops.map((_, i) => i));
+  const pickedUp = new Set<number>(); // linkIdx whose pickup has been visited
 
-  const orderedPickups = orderByAngle(pickups);
-  const orderedDropoffs = orderByAngle(dropoffs);
-  const allPoints = [...orderedPickups, ...orderedDropoffs];
-  const origin = allPoints[0];
-  const destination = allPoints[allPoints.length - 1];
-  const waypoints = allPoints.slice(1, -1);
+  // Start from the pickup closest to the centroid of all pickups
+  const pickups = allStops.filter(s => s.type === 'P');
+  const cLat = pickups.reduce((s, p) => s + p.lat, 0) / pickups.length;
+  const cLng = pickups.reduce((s, p) => s + p.lng, 0) / pickups.length;
+  const centroid = { lat: cLat, lng: cLng };
 
-  let url = `https://www.google.com/maps/dir/${origin.lat},${origin.lng}`;
-  for (const wp of waypoints) {
-    url += `/${wp.lat},${wp.lng}`;
+  let firstIdx = -1;
+  let firstDist = Infinity;
+  for (const i of remaining) {
+    const s = allStops[i];
+    if (s.type !== 'P') continue;
+    const d = haversine(centroid, s);
+    if (d < firstDist) { firstDist = d; firstIdx = i; }
   }
-  url += `/${destination.lat},${destination.lng}`;
 
-  return url;
+  remaining.delete(firstIdx);
+  ordered.push(allStops[firstIdx]);
+  pickedUp.add(allStops[firstIdx].linkIdx);
+
+  while (remaining.size > 0) {
+    const current = ordered[ordered.length - 1];
+    let bestIdx = -1;
+    let bestDist = Infinity;
+
+    for (const i of remaining) {
+      const s = allStops[i];
+      // Can only visit a dropoff if its pickup was already visited
+      if (s.type === 'D' && !pickedUp.has(s.linkIdx)) continue;
+      const d = haversine(current, s);
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+
+    if (bestIdx === -1) break; // shouldn't happen
+    remaining.delete(bestIdx);
+    const stop = allStops[bestIdx];
+    ordered.push(stop);
+    if (stop.type === 'P') pickedUp.add(stop.linkIdx);
+  }
+
+  // Build URL
+  const points = ordered.map(s => `${s.lat},${s.lng}`);
+  return `https://www.google.com/maps/dir/${points.join('/')}`;
 }
 
 const LinkCombiner = ({ lang }: { lang: string }) => {
