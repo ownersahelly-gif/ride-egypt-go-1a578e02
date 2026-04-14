@@ -111,6 +111,17 @@ const RouteMapPreview = ({ stops, onReorder, lang }: Props) => {
     return d;
   }, [stops]);
 
+  const handleMarkerDragEnd = useCallback(async (idx: number, e: google.maps.MapMouseEvent) => {
+    if (!e.latLng) return;
+    const newLat = e.latLng.lat();
+    const newLng = e.latLng.lng();
+    const newName = await reverseGeocode(newLat, newLng);
+    const newStops = [...stops];
+    newStops[idx] = { ...newStops[idx], lat: newLat, lng: newLng, name: newName };
+    onReorder(newStops);
+    toast.success(lang === 'ar' ? 'تم تحديث الموقع' : 'Location updated');
+  }, [stops, onReorder, lang]);
+
   const deleteStop = useCallback((idx: number) => {
     const newStops = stops.filter((_, i) => i !== idx);
     onReorder(newStops);
