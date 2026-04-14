@@ -1,29 +1,70 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { ParsedLink, OrderedStop } from './types';
 
+/** Safely decode URL text without crashing on malformed input */
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value.replace(/\+/g, ' '));
+  } catch {
+    return value.replace(/\+/g, ' ');
+  }
+}
+
+function normalizeSegment(seg: string): string {
+  return safeDecode(seg)
+    .replace(/^[(/\s]+|[)/\s]+$/g, '')
+    .replace(/[\u200e\u200f\u202a-\u202e]/g, '')
+    .trim();
+}
+
+function parseCoordinateSegment(seg: string): { lat: number; lng: number } | null {
+  const normalized = normalizeSegment(seg);
+  const coordMatch = normalized.match(/^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/);
+  if (!coordMatch) return null;
+
+  return {
+    lat: parseFloat(coordMatch[1]),
+    lng: parseFloat(coordMatch[2]),
+  };
+}
+
+function extractDataCoordinates(url: string): { lat: number; lng: number }[] {
+  const coords: { lat: number; lng: number }[] = [];
+  const dataRegex = /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = dataRegex.exec(url)) !== null) {
+    coords.push({ lat: parseFloat(match[1]), lng: parseFloat(match[2]) });
+  }
+
+  return coords;
+}
+
 /** Use Google Geocoder to resolve a segment (place name or coordinates) */
 function resolveSegment(seg: string): Promise<{ lat: number; lng: number; name: string }> {
   return new Promise((resolve, reject) => {
     const geocoder = new google.maps.Geocoder();
-    const coordMatch = seg.match(/^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/);
-    if (coordMatch) {
-      const lat = parseFloat(coordMatch[1]);
-      const lng = parseFloat(coordMatch[2]);
-      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-        const name = status === 'OK' && results?.[0] ? results[0].formatted_address : `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-        resolve({ lat, lng, name });
+    const coord = parseCoordinateSegment(seg);
+
+    if (coord) {
+      geocoder.geocode({ location: coord }, (results, status) => {
+        const name = status === 'OK' && results?.[0]
+          ? results[0].formatted_address
+          : `${coord.lat.toFixed(4)}, ${coord.lng.toFixed(4)}`;
+        resolve({ lat: coord.lat, lng: coord.lng, name });
       });
-    } else {
-      const decoded = decodeURIComponent(seg.replace(/\+/g, ' '));
-      geocoder.geocode({ address: decoded }, (results, status) => {
-        if (status === 'OK' && results?.[0]) {
-          const loc = results[0].geometry.location;
-          resolve({ lat: loc.lat(), lng: loc.lng(), name: results[0].formatted_address });
-        } else {
-          reject(new Error(`Could not find: ${decoded.substring(0, 40)}`));
-        }
-      });
+      return;
     }
+
+    const decoded = normalizeSegment(seg);
+    geocoder.geocode({ address: decoded }, (results, status) => {
+      if (status === 'OK' && results?.[0]) {
+        const loc = results[0].geometry.location;
+        resolve({ lat: loc.lat(), lng: loc.lng(), name: results[0].formatted_address });
+      } else {
+        reject(new Error(`Could not find: ${decoded.substring(0, 60)}`));
+      }
+    });
   });
 }
 
@@ -45,35 +86,43 @@ function isShortLink(url: string): boolean {
 export async function parseGoogleMapsLink(url: string): Promise<{ origin: { lat: number; lng: number; name: string }; destination: { lat: number; lng: number; name: string } } | null> {
   let resolvedUrl = url;
 
-  // Resolve short links first
   if (isShortLink(url)) {
     resolvedUrl = await resolveShortLink(url);
   }
 
-  // Extract the path after /dir/
   const dirMatch = resolvedUrl.match(/\/dir\/(.+?)(?:\/@|\/data=|$|\?)/);
   if (!dirMatch) return null;
 
-  const segments = dirMatch[1].split('/').filter(s => s.trim() !== '');
-  if (segments.length < 2) {
-    // Try extracting coords from /data= blob as fallback for destination
-    const dataCoords: { lat: number; lng: number }[] = [];
-    let dm: RegExpExecArray | null;
-    const dataRegex = /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/g;
-    while ((dm = dataRegex.exec(resolvedUrl)) !== null) {
-      dataCoords.push({ lat: parseFloat(dm[1]), lng: parseFloat(dm[2]) });
-    }
-    if (segments.length >= 1 && dataCoords.length > 0) {
-      const origin = await resolveSegment(segments[0]);
-      const destCoord = dataCoords[dataCoords.length - 1];
-      const destination = await resolveSegment(`${destCoord.lat},${destCoord.lng}`);
-      return { origin, destination };
-    }
+  const segments = dirMatch[1]
+    .split('/')
+    .map(normalizeSegment)
+    .filter(Boolean);
+
+  const dataCoords = extractDataCoordinates(resolvedUrl);
+  const firstPathCoord = segments[0] ? parseCoordinateSegment(segments[0]) : null;
+  const lastPathCoord = segments.length > 0 ? parseCoordinateSegment(segments[segments.length - 1]) : null;
+
+  let originRef: string | null = null;
+  let destinationRef: string | null = null;
+
+  if (dataCoords.length >= 2) {
+    originRef = `${dataCoords[0].lat},${dataCoords[0].lng}`;
+    destinationRef = `${dataCoords[dataCoords.length - 1].lat},${dataCoords[dataCoords.length - 1].lng}`;
+  } else if (firstPathCoord && dataCoords.length >= 1) {
+    originRef = `${firstPathCoord.lat},${firstPathCoord.lng}`;
+    destinationRef = `${dataCoords[dataCoords.length - 1].lat},${dataCoords[dataCoords.length - 1].lng}`;
+  } else if (firstPathCoord && lastPathCoord) {
+    originRef = `${firstPathCoord.lat},${firstPathCoord.lng}`;
+    destinationRef = `${lastPathCoord.lat},${lastPathCoord.lng}`;
+  } else if (segments.length >= 2) {
+    originRef = segments[0];
+    destinationRef = segments[segments.length - 1];
+  } else {
     return null;
   }
 
-  const origin = await resolveSegment(segments[0]);
-  const destination = await resolveSegment(segments[segments.length - 1]);
+  const origin = await resolveSegment(originRef);
+  const destination = await resolveSegment(destinationRef);
 
   return { origin, destination };
 }
