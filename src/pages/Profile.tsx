@@ -19,7 +19,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { ChevronLeft, ChevronRight, User, Camera, Loader2, Shield, FileText, MapPin, Scale, ChevronRight as ChevronRightIcon, Trash2, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, User, Camera, Loader2, Shield, FileText, MapPin, Scale, ChevronRight as ChevronRightIcon, Trash2, AlertTriangle, HelpCircle } from 'lucide-react';
 
 const Profile = () => {
   const { user, signOut } = useAuth();
@@ -167,21 +167,29 @@ const Profile = () => {
           </Button>
         </form>
 
-        {/* Legal & Privacy Section */}
+        {/* Support & Legal Section */}
         <div className="mt-6 bg-card rounded-2xl border border-border overflow-hidden">
           <h3 className="text-sm font-semibold text-foreground px-6 pt-5 pb-2">
-            {lang === 'ar' ? 'القانوني والخصوصية' : 'Legal & Privacy'}
+            {lang === 'ar' ? 'الدعم والقانوني' : 'Support & Legal'}
           </h3>
+          <Link
+            to="/support"
+            className="flex items-center gap-3 px-6 py-3.5 hover:bg-muted/50 transition-colors"
+          >
+            <HelpCircle className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span className="text-sm text-foreground flex-1">{lang === 'ar' ? 'الدعم والمساعدة' : 'Support & Help'}</span>
+            <ChevronRightIcon className="w-4 h-4 text-muted-foreground" />
+          </Link>
           {[
             { icon: Shield, label: { en: 'Privacy Policy', ar: 'سياسة الخصوصية' }, section: 'privacy' },
             { icon: FileText, label: { en: 'Terms of Service', ar: 'شروط الخدمة' }, section: 'terms' },
             { icon: MapPin, label: { en: 'Location Data Usage', ar: 'استخدام بيانات الموقع' }, section: 'location' },
             { icon: Scale, label: { en: 'Licenses & Copyright', ar: 'التراخيص وحقوق الطبع' }, section: 'licenses' },
-          ].map((item, i) => (
+          ].map((item) => (
             <Link
               key={item.section}
               to={`/legal?section=${item.section}`}
-              className={`flex items-center gap-3 px-6 py-3.5 hover:bg-muted/50 transition-colors ${i > 0 ? 'border-t border-border' : ''}`}
+              className="flex items-center gap-3 px-6 py-3.5 hover:bg-muted/50 transition-colors border-t border-border"
             >
               <item.icon className="w-4 h-4 text-muted-foreground shrink-0" />
               <span className="text-sm text-foreground flex-1">{item.label[lang]}</span>
