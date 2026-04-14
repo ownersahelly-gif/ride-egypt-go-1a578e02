@@ -1951,6 +1951,10 @@ const AdminPanel = () => {
                   <Label className="text-xs">WhatsApp</Label>
                   <Input value={contentSettings.contact_whatsapp || ''} onChange={(e) => setContentSettings(prev => ({ ...prev, contact_whatsapp: e.target.value }))} placeholder="+20..." dir="ltr" />
                 </div>
+                <div>
+                  <Label className="text-xs">{lang === 'ar' ? 'بريد الدعم (صفحة Support)' : 'Support Email (Support page)'}</Label>
+                  <Input value={contentSettings.support_email || ''} onChange={(e) => setContentSettings(prev => ({ ...prev, support_email: e.target.value }))} placeholder="support@massar-app.com" dir="ltr" />
+                </div>
               </div>
             </div>
 
@@ -2010,7 +2014,7 @@ const AdminPanel = () => {
                   'hero_tagline_en', 'hero_tagline_ar', 'hero_title_en', 'hero_title_ar',
                   'hero_title_highlight_en', 'hero_title_highlight_ar', 'hero_subtitle_en', 'hero_subtitle_ar',
                   'announcement_en', 'announcement_ar',
-                  'contact_phone', 'contact_email', 'contact_whatsapp',
+                  'contact_phone', 'contact_email', 'contact_whatsapp', 'support_email',
                   'social_facebook', 'social_instagram', 'social_twitter',
                   'feature_carpool_enabled', 'feature_packages_enabled', 'feature_track_shuttle_enabled',
                 ];
