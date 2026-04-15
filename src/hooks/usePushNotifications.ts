@@ -46,7 +46,8 @@ export const usePushNotifications = () => {
         console.log('[Push] register() called successfully');
 
         // ✅ Use FirebaseMessaging to get the real FCM token
-        const { FirebaseMessaging } = await import('@capacitor-firebase/messaging');
+        const pkg = '@capacitor-firebase/messaging';
+        const { FirebaseMessaging } = await import(/* @vite-ignore */ pkg);
         const { token } = await FirebaseMessaging.getToken();
         console.log('[Push] Got FCM token:', token?.substring(0, 20) + '...');
 
