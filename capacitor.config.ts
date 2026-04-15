@@ -17,6 +17,8 @@ const config: CapacitorConfig = {
       <string>Massar needs your location in the background to share live location with passengers during active rides.</string>
       <key>NSMicrophoneUsageDescription</key>
       <string>Massar needs microphone access for voice calls with your driver or passengers.</string>
+      <key>FirebaseAppDelegateProxyEnabled</key>
+      <false/>
     `,
   },
 };
