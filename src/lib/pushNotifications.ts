@@ -34,5 +34,9 @@ export const sendPushNotification = async (payload: PushNotificationPayload) => 
     throw new Error(data?.error || data?.message || `Function failed: ${response.status}`);
   }
 
+  if (data?.message === 'No action taken') {
+    throw new Error('Live push function is outdated or payload was not handled');
+  }
+
   return data;
 };

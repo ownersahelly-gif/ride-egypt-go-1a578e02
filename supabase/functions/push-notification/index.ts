@@ -7,6 +7,14 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+const supportedNotificationTypes = new Set([
+  "test",
+  "waitlist_promoted",
+  "driver_approved",
+  "new_driver_application",
+  "trip_started",
+]);
+
 // Get an OAuth2 access token from the service account JSON
 async function getAccessToken(serviceAccount: any): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
@@ -131,6 +139,20 @@ Deno.serve(async (req) => {
     const body = await req.json();
     console.log("[push-notification] Received body:", JSON.stringify(body));
     const { type, record, notification_type } = body;
+
+    if (notification_type && !supportedNotificationTypes.has(notification_type)) {
+      return new Response(
+        JSON.stringify({ error: `Unsupported notification_type: ${notification_type}` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!record || typeof record !== "object") {
+      return new Response(
+        JSON.stringify({ error: "Invalid or missing record payload" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // ── Test push notification ──
     if (notification_type === "test" && record?.user_id) {
