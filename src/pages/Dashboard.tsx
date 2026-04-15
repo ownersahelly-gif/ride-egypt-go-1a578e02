@@ -771,18 +771,27 @@ const Dashboard = () => {
         </Link>
       )}
 
-      <div className="flex-1 min-h-0 relative bg-muted">
+      <div ref={mapContainerRef} className="flex-1 min-h-0 relative bg-muted">
         {showMap ? (
-          <MapView
-            className="h-full w-full rounded-none"
-            markers={mapMarkers}
-            origin={step === 'details' && selectedRide?.routes ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng } : (pickup && dropoff ? pickup : undefined)}
-            destination={step === 'details' && selectedRide?.routes ? { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng } : (pickup && dropoff ? dropoff : undefined)}
-            waypoints={step === 'details' && selectedRide?.routes ? routeStops.map((s: any) => ({ lat: s.lat, lng: s.lng })) : []}
-            showDirections={step === 'details' ? !!selectedRide?.routes : (!!pickup && !!dropoff)}
-            zoom={12}
-            showUserLocation
-          />
+          <Suspense fallback={
+            <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+              <div className="flex items-center gap-2 text-sm">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span>{lang === 'ar' ? 'جاري تجهيز الخريطة...' : 'Preparing map...'}</span>
+              </div>
+            </div>
+          }>
+            <MapView
+              className="h-full w-full rounded-none"
+              markers={mapMarkers}
+              origin={step === 'details' && selectedRide?.routes ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng } : (pickup && dropoff ? pickup : undefined)}
+              destination={step === 'details' && selectedRide?.routes ? { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng } : (pickup && dropoff ? dropoff : undefined)}
+              waypoints={step === 'details' && selectedRide?.routes ? routeStops.map((s: any) => ({ lat: s.lat, lng: s.lng })) : []}
+              showDirections={step === 'details' ? !!selectedRide?.routes : (!!pickup && !!dropoff)}
+              zoom={12}
+              showUserLocation
+            />
+          </Suspense>
         ) : (
           <div className="flex h-full w-full items-center justify-center text-muted-foreground">
             <div className="flex items-center gap-2 text-sm">
