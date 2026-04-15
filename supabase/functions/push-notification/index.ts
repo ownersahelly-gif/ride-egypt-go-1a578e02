@@ -127,7 +127,9 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { type, record, notification_type } = await req.json();
+    const body = await req.json();
+    console.log("[push-notification] Received body:", JSON.stringify(body));
+    const { type, record, notification_type } = body;
 
     // ── Test push notification ──
     if (notification_type === "test" && record?.user_id) {
