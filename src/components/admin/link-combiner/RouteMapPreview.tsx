@@ -35,6 +35,8 @@ const RouteMapPreview = ({ stops, onReorder, lang }: Props) => {
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
   const dragRef = useRef<number | null>(null);
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState('');
   const [routePath, setRoutePath] = useState<google.maps.LatLngLiteral[]>([]);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeDistance, setRouteDistance] = useState<number | null>(null);
