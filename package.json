@@ -21,6 +21,7 @@
     "@capacitor/core": "^8.3.0",
     "@capacitor/geolocation": "^8.2.0",
     "@capacitor/ios": "^8.3.0",
+    "@capacitor/keyboard": "^8.0.3",
     "@capacitor/push-notifications": "^8.0.3",
     "@googlemaps/markerclusterer": "^2.6.2",
     "@hookform/resolvers": "^3.10.0",
