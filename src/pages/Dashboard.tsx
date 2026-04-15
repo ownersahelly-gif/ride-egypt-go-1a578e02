@@ -729,12 +729,12 @@ const Dashboard = () => {
                   <Button variant="ghost" size="icon" className="rounded-full"><Shield className="w-4 h-4" /></Button>
                 </Link>
               )}
-              <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="rounded-full p-2 hover:bg-muted transition-colors"><Globe className="w-4 h-4" /></button>
+              <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="rounded-full px-2.5 py-1.5 hover:bg-muted transition-colors flex items-center gap-1 text-xs font-medium"><Globe className="w-4 h-4" />{lang === 'en' ? 'عربي' : 'EN'}</button>
               <Button variant="ghost" size="icon" className="rounded-full" onClick={handleSignOut}><LogOut className="w-4 h-4" /></Button>
             </>
           ) : (
             <>
-              <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="rounded-full p-2 hover:bg-muted transition-colors"><Globe className="w-4 h-4" /></button>
+              <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="rounded-full px-2.5 py-1.5 hover:bg-muted transition-colors flex items-center gap-1 text-xs font-medium"><Globe className="w-4 h-4" />{lang === 'en' ? 'عربي' : 'EN'}</button>
               <Link to="/login"><Button variant="ghost" size="sm">{lang === 'ar' ? 'تسجيل الدخول' : 'Log in'}</Button></Link>
               <Link to="/signup"><Button size="sm">{lang === 'ar' ? 'إنشاء حساب' : 'Sign up'}</Button></Link>
             </>
