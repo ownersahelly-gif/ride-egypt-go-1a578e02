@@ -1,3 +1,4 @@
+import React, { Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -6,35 +7,37 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import Index from "./pages/Index.tsx";
-import Login from "./pages/Login.tsx";
-import Signup from "./pages/Signup.tsx";
-import Dashboard from "./pages/Dashboard.tsx";
-import BookRide from "./pages/BookRide.tsx";
-import MyBookings from "./pages/MyBookings.tsx";
-import RequestRoute from "./pages/RequestRoute.tsx";
-import Profile from "./pages/Profile.tsx";
-import DriverApply from "./pages/DriverApply.tsx";
-import DriverDashboard from "./pages/DriverDashboard.tsx";
-import TrackShuttle from "./pages/TrackShuttle.tsx";
-import ActiveRide from "./pages/ActiveRide.tsx";
-import AdminPanel from "./pages/AdminPanel.tsx";
-import DriverProfile from "./pages/DriverProfile.tsx";
-import Carpool from "./pages/Carpool.tsx";
-import CarpoolVerify from "./pages/CarpoolVerify.tsx";
-import CarpoolPost from "./pages/CarpoolPost.tsx";
-import CarpoolRoute from "./pages/CarpoolRoute.tsx";
-import CarpoolManage from "./pages/CarpoolManage.tsx";
-import Wallet from "./pages/Wallet.tsx";
-import DriverTestView from "./pages/DriverTestView.tsx";
-import PartnerDashboard from "./pages/PartnerDashboard.tsx";
-import GlobalMap from "./pages/GlobalMap.tsx";
-import NotFound from "./pages/NotFound.tsx";
-import Legal from "./pages/Legal.tsx";
-import Support from "./pages/Support.tsx";
 import GlobalNotifications from "./components/GlobalNotifications";
-import IncomingCall from "./pages/IncomingCall";
 import { useIncomingCall } from "./hooks/useIncomingCall";
+
+// Lazy-load all pages for code splitting
+const Index = React.lazy(() => import("./pages/Index"));
+const Login = React.lazy(() => import("./pages/Login"));
+const Signup = React.lazy(() => import("./pages/Signup"));
+const Dashboard = React.lazy(() => import("./pages/Dashboard"));
+const BookRide = React.lazy(() => import("./pages/BookRide"));
+const MyBookings = React.lazy(() => import("./pages/MyBookings"));
+const RequestRoute = React.lazy(() => import("./pages/RequestRoute"));
+const Profile = React.lazy(() => import("./pages/Profile"));
+const DriverApply = React.lazy(() => import("./pages/DriverApply"));
+const DriverDashboard = React.lazy(() => import("./pages/DriverDashboard"));
+const TrackShuttle = React.lazy(() => import("./pages/TrackShuttle"));
+const ActiveRide = React.lazy(() => import("./pages/ActiveRide"));
+const AdminPanel = React.lazy(() => import("./pages/AdminPanel"));
+const DriverProfile = React.lazy(() => import("./pages/DriverProfile"));
+const Carpool = React.lazy(() => import("./pages/Carpool"));
+const CarpoolVerify = React.lazy(() => import("./pages/CarpoolVerify"));
+const CarpoolPost = React.lazy(() => import("./pages/CarpoolPost"));
+const CarpoolRoute = React.lazy(() => import("./pages/CarpoolRoute"));
+const CarpoolManage = React.lazy(() => import("./pages/CarpoolManage"));
+const Wallet = React.lazy(() => import("./pages/Wallet"));
+const DriverTestView = React.lazy(() => import("./pages/DriverTestView"));
+const PartnerDashboard = React.lazy(() => import("./pages/PartnerDashboard"));
+const GlobalMap = React.lazy(() => import("./pages/GlobalMap"));
+const NotFound = React.lazy(() => import("./pages/NotFound"));
+const Legal = React.lazy(() => import("./pages/Legal"));
+const Support = React.lazy(() => import("./pages/Support"));
+const IncomingCall = React.lazy(() => import("./pages/IncomingCall"));
 
 const queryClient = new QueryClient();
 
@@ -53,36 +56,38 @@ const App = () => (
           <Sonner />
           <BrowserRouter>
             <AppMobileServices />
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<Signup />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/book" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/book-ride" element={<BookRide />} />
-              <Route path="/my-bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
-              <Route path="/request-route" element={<ProtectedRoute><RequestRoute /></ProtectedRoute>} />
-              <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-              <Route path="/wallet" element={<ProtectedRoute><Wallet /></ProtectedRoute>} />
-              <Route path="/driver-apply" element={<ProtectedRoute><DriverApply /></ProtectedRoute>} />
-              <Route path="/driver-dashboard" element={<ProtectedRoute><DriverDashboard /></ProtectedRoute>} />
-              <Route path="/track" element={<ProtectedRoute><TrackShuttle /></ProtectedRoute>} />
-              <Route path="/active-ride" element={<ProtectedRoute><ActiveRide /></ProtectedRoute>} />
-              <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
-              <Route path="/driver-test" element={<ProtectedRoute><DriverTestView /></ProtectedRoute>} />
-              <Route path="/driver/:id" element={<DriverProfile />} />
-              <Route path="/carpool" element={<ProtectedRoute><Carpool /></ProtectedRoute>} />
-              <Route path="/carpool/verify" element={<ProtectedRoute><CarpoolVerify /></ProtectedRoute>} />
-              <Route path="/carpool/post" element={<ProtectedRoute><CarpoolPost /></ProtectedRoute>} />
-              <Route path="/carpool/route/:id" element={<ProtectedRoute><CarpoolRoute /></ProtectedRoute>} />
-              <Route path="/carpool/manage/:id" element={<ProtectedRoute><CarpoolManage /></ProtectedRoute>} />
-              <Route path="/legal" element={<Legal />} />
-              <Route path="/support" element={<Support />} />
-              <Route path="/partner" element={<ProtectedRoute><PartnerDashboard /></ProtectedRoute>} />
-              <Route path="/admin/global-map" element={<ProtectedRoute><GlobalMap /></ProtectedRoute>} />
-              <Route path="/incoming-call" element={<IncomingCall />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+            <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" /></div>}>
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/signup" element={<Signup />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/book" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/book-ride" element={<BookRide />} />
+                <Route path="/my-bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
+                <Route path="/request-route" element={<ProtectedRoute><RequestRoute /></ProtectedRoute>} />
+                <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                <Route path="/wallet" element={<ProtectedRoute><Wallet /></ProtectedRoute>} />
+                <Route path="/driver-apply" element={<ProtectedRoute><DriverApply /></ProtectedRoute>} />
+                <Route path="/driver-dashboard" element={<ProtectedRoute><DriverDashboard /></ProtectedRoute>} />
+                <Route path="/track" element={<ProtectedRoute><TrackShuttle /></ProtectedRoute>} />
+                <Route path="/active-ride" element={<ProtectedRoute><ActiveRide /></ProtectedRoute>} />
+                <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
+                <Route path="/driver-test" element={<ProtectedRoute><DriverTestView /></ProtectedRoute>} />
+                <Route path="/driver/:id" element={<DriverProfile />} />
+                <Route path="/carpool" element={<ProtectedRoute><Carpool /></ProtectedRoute>} />
+                <Route path="/carpool/verify" element={<ProtectedRoute><CarpoolVerify /></ProtectedRoute>} />
+                <Route path="/carpool/post" element={<ProtectedRoute><CarpoolPost /></ProtectedRoute>} />
+                <Route path="/carpool/route/:id" element={<ProtectedRoute><CarpoolRoute /></ProtectedRoute>} />
+                <Route path="/carpool/manage/:id" element={<ProtectedRoute><CarpoolManage /></ProtectedRoute>} />
+                <Route path="/legal" element={<Legal />} />
+                <Route path="/support" element={<Support />} />
+                <Route path="/partner" element={<ProtectedRoute><PartnerDashboard /></ProtectedRoute>} />
+                <Route path="/admin/global-map" element={<ProtectedRoute><GlobalMap /></ProtectedRoute>} />
+                <Route path="/incoming-call" element={<IncomingCall />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
           </BrowserRouter>
         </TooltipProvider>
       </AuthProvider>
