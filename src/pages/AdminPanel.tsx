@@ -2175,6 +2175,75 @@ const AdminPanel = () => {
                 {lang === 'ar' ? 'تفعيل رحلة تجريبية الآن' : 'Activate Test Trip Now'}
               </Button>
             </div>
+
+            {/* Test VoIP Call */}
+            <div className="bg-card border border-border rounded-xl p-6 space-y-4 max-w-lg">
+              <h3 className="font-semibold text-foreground flex items-center gap-2">
+                <Phone className="w-5 h-5 text-primary" />
+                {lang === 'ar' ? 'اختبار مكالمة VoIP' : 'Test VoIP Call'}
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {lang === 'ar'
+                  ? 'أدخل معرف المستخدم لإرسال إشعار مكالمة واردة تجريبية'
+                  : 'Enter a user ID to send a test incoming call push notification'}
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <Label>{lang === 'ar' ? 'معرف المستخدم' : 'User ID'}</Label>
+                  <Input
+                    id="test-call-user-id"
+                    placeholder="e.g. a1b2c3d4-..."
+                    className="font-mono text-xs"
+                    dir="ltr"
+                  />
+                </div>
+                <Button
+                  className="w-full"
+                  onClick={async () => {
+                    const userIdInput = (document.getElementById('test-call-user-id') as HTMLInputElement)?.value?.trim();
+                    if (!userIdInput) {
+                      toast.error(lang === 'ar' ? 'أدخل معرف المستخدم' : 'Enter a user ID');
+                      return;
+                    }
+                    try {
+                      // Lookup FCM token
+                      const { data: tokenRow, error: tokenErr } = await supabase
+                        .from('device_tokens')
+                        .select('token')
+                        .eq('user_id', userIdInput)
+                        .order('updated_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
+
+                      if (tokenErr || !tokenRow?.token) {
+                        toast.error(lang === 'ar' ? 'لا يوجد رمز FCM لهذا المستخدم' : 'No FCM token found for this user');
+                        return;
+                      }
+
+                      const randomTripId = crypto.randomUUID().slice(0, 8);
+                      const { data: callRes, error: callErr } = await supabase.functions.invoke('initiate-call', {
+                        body: {
+                          riderFcmToken: tokenRow.token,
+                          driverName: 'Admin Test',
+                          tripId: randomTripId,
+                        },
+                      });
+
+                      if (callErr) {
+                        toast.error(`Call failed: ${callErr.message}`);
+                      } else {
+                        toast.success(lang === 'ar' ? 'تم إرسال إشعار المكالمة!' : 'Call notification sent!');
+                      }
+                    } catch (err: any) {
+                      toast.error(err.message || 'Failed');
+                    }
+                  }}
+                >
+                  <Phone className="w-4 h-4 me-2" />
+                  {lang === 'ar' ? 'إرسال مكالمة تجريبية' : 'Send Test Call'}
+                </Button>
+              </div>
+            </div>
           </div>
         )}
         {/* Users Tab */}

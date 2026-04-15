@@ -1,8 +1,10 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Phone, PhoneOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
+
+const MAX_CALL_DURATION = 90; // 1.5 minutes max
 
 const IncomingCall = () => {
   const [searchParams] = useSearchParams();
@@ -15,10 +17,34 @@ const IncomingCall = () => {
   const clientRef = useRef<any>(null);
   const localTrackRef = useRef<any>(null);
   const timerRef = useRef<ReturnType<typeof setInterval>>();
+  const endingRef = useRef(false);
+
+  const cleanup = useCallback(async () => {
+    if (endingRef.current) return;
+    endingRef.current = true;
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (localTrackRef.current) {
+      localTrackRef.current.close();
+      localTrackRef.current = null;
+    }
+    if (clientRef.current) {
+      try { await clientRef.current.leave(); } catch {}
+      clientRef.current = null;
+    }
+    setCallState('ended');
+  }, []);
+
+  // Auto-end call at max duration
+  useEffect(() => {
+    if (callState === 'connected' && duration >= MAX_CALL_DURATION) {
+      cleanup();
+    }
+  }, [duration, callState, cleanup]);
 
   const handleAccept = useCallback(async () => {
     try {
       setCallState('connected');
+      endingRef.current = false;
 
       const uid = Math.floor(Math.random() * 100000);
       const { data, error } = await supabase.functions.invoke('agora-token', {
@@ -42,7 +68,6 @@ const IncomingCall = () => {
       localTrackRef.current = localAudioTrack;
       await client.publish([localAudioTrack]);
 
-      // Subscribe to remote users
       client.on('user-published', async (user: any, mediaType: "audio" | "video" | "datachannel") => {
         await client.subscribe(user, mediaType);
         if (mediaType === 'audio') {
@@ -50,7 +75,6 @@ const IncomingCall = () => {
         }
       });
 
-      // Start duration timer
       timerRef.current = setInterval(() => {
         setDuration((d) => d + 1);
       }, 1000);
@@ -61,18 +85,9 @@ const IncomingCall = () => {
   }, [tripId]);
 
   const handleDecline = useCallback(async () => {
-    setCallState('ended');
-    if (localTrackRef.current) {
-      localTrackRef.current.close();
-    }
-    if (clientRef.current) {
-      await clientRef.current.leave();
-    }
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
+    await cleanup();
     navigate(-1);
-  }, [navigate]);
+  }, [navigate, cleanup]);
 
   const formatDuration = (s: number) => {
     const m = Math.floor(s / 60);
@@ -80,9 +95,10 @@ const IncomingCall = () => {
     return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   };
 
+  const remaining = MAX_CALL_DURATION - duration;
+
   return (
     <div className="fixed inset-0 bg-black flex flex-col items-center justify-center z-[9999] safe-area-top safe-area-bottom">
-      {/* Caller info */}
       <div className="flex flex-col items-center gap-4 mb-16">
         <div className="w-24 h-24 rounded-full bg-muted/20 flex items-center justify-center">
           <Phone className="w-12 h-12 text-white" />
@@ -93,15 +109,19 @@ const IncomingCall = () => {
           {callState === 'connected' && formatDuration(duration)}
           {callState === 'ended' && 'Call ended'}
         </p>
+        {callState === 'connected' && remaining <= 30 && (
+          <p className="text-red-400 text-xs animate-pulse">
+            {remaining}s remaining
+          </p>
+        )}
       </div>
 
-      {/* Action buttons */}
       <div className="flex items-center gap-12">
         {callState === 'ringing' && (
           <>
             <Button
               onClick={handleDecline}
-              className="w-16 h-16 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center"
+              className="w-16 h-16 rounded-full bg-destructive hover:bg-destructive/90 flex items-center justify-center"
               size="icon"
             >
               <PhoneOff className="w-7 h-7 text-white" />
@@ -118,7 +138,7 @@ const IncomingCall = () => {
         {callState === 'connected' && (
           <Button
             onClick={handleDecline}
-            className="w-16 h-16 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center"
+            className="w-16 h-16 rounded-full bg-destructive hover:bg-destructive/90 flex items-center justify-center"
             size="icon"
           >
             <PhoneOff className="w-7 h-7 text-white" />
