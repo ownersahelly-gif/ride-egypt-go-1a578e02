@@ -17,10 +17,12 @@ const BottomNav = () => {
 
   return (
     <nav
-      className="fixed bottom-0 inset-x-0 z-50 border-t border-border bg-card/95 backdrop-blur-sm"
+      className="fixed bottom-0 left-0 right-0 z-[9999] border-t border-border bg-card/95 backdrop-blur-sm"
       style={{
         height: 'calc(4rem + env(safe-area-inset-bottom, 0px))',
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        WebkitTransform: 'translate3d(0,0,0)',
+        transform: 'translate3d(0,0,0)',
       }}
     >
       <div className="grid h-full grid-cols-5">
