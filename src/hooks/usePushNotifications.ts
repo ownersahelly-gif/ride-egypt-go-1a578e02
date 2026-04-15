@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 
 /**
@@ -8,12 +8,12 @@ import { useAuth } from '@/contexts/AuthContext';
  */
 export const usePushNotifications = () => {
   const { user } = useAuth();
+  const setupDone = useRef(false);
 
   useEffect(() => {
     if (!user) return;
-
-    let cancelled = false;
-    let removeListeners: Array<() => Promise<void> | void> = [];
+    if (setupDone.current) return;
+    setupDone.current = true;
 
     const setup = async () => {
       try {
@@ -31,7 +31,7 @@ export const usePushNotifications = () => {
 
         const saveToken = async (tokenValue: string) => {
           const token = tokenValue?.trim();
-          if (!token || cancelled) return;
+          if (!token) return;
 
           console.log('[Push] Saving token:', token.substring(0, 20) + '...');
 
@@ -72,28 +72,23 @@ export const usePushNotifications = () => {
           return;
         }
 
-        if (cancelled) return;
-
-        const registrationListener = await PushNotifications.addListener('registration', async (token) => {
+        // Add listeners BEFORE calling register to avoid missing the token event
+        await PushNotifications.addListener('registration', async (token) => {
           console.log('[Push] Registration token:', token.value?.substring(0, 20) + '...');
           await saveToken(token.value);
         });
-        removeListeners.push(() => registrationListener.remove());
 
-        const registrationErrorListener = await PushNotifications.addListener('registrationError', (error) => {
+        await PushNotifications.addListener('registrationError', (error) => {
           console.error('[Push] Registration error:', JSON.stringify(error));
         });
-        removeListeners.push(() => registrationErrorListener.remove());
 
-        const receivedListener = await PushNotifications.addListener('pushNotificationReceived', (notification) => {
+        await PushNotifications.addListener('pushNotificationReceived', (notification) => {
           console.log('[Push] Notification received in foreground:', notification);
         });
-        removeListeners.push(() => receivedListener.remove());
 
-        const actionListener = await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+        await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
           console.log('[Push] Notification action:', action);
         });
-        removeListeners.push(() => actionListener.remove());
 
         console.log('[Push] Calling register()...');
         await PushNotifications.register();
@@ -104,12 +99,8 @@ export const usePushNotifications = () => {
     };
 
     // Delay to ensure app is fully loaded
-    const timer = setTimeout(setup, 1500);
+    setTimeout(setup, 1500);
 
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-      removeListeners.forEach((remove) => remove());
-    };
+    // Don't clean up listeners — they must persist for the app lifetime
   }, [user]);
 };
