@@ -1,11 +1,18 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 
 export const usePushNotifications = () => {
   const { user } = useAuth();
+  const setupDoneRef = useRef(false);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setupDoneRef.current = false;
+      return;
+    }
+
+    // Prevent duplicate setup from React strict mode double-mount
+    if (setupDoneRef.current) return;
 
     let cancelled = false;
 
@@ -29,6 +36,9 @@ export const usePushNotifications = () => {
         if (permStatus.receive !== "granted") return;
         if (cancelled) return;
 
+        // Remove all existing listeners before adding new ones
+        await PushNotifications.removeAllListeners();
+
         await PushNotifications.addListener("registrationError", (error) => {
           console.error("[Push] Registration error:", JSON.stringify(error));
         });
@@ -44,6 +54,8 @@ export const usePushNotifications = () => {
         console.log("[Push] Calling register()...");
         await PushNotifications.register();
         console.log("[Push] register() called successfully");
+
+        setupDoneRef.current = true;
 
         // Use Function constructor to completely hide the import from Rollup/Vite
         const dynamicImport = new Function('specifier', 'return import(specifier)');

@@ -5,6 +5,11 @@
 @tailwind utilities;
 
 @layer base {
+  /* Fix iOS WebView 300ms tap delay */
+  *, *::before, *::after {
+    touch-action: manipulation;
+  }
+
   :root {
     --background: 0 0% 100%;
     --foreground: 220 20% 10%;

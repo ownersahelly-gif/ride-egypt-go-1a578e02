@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 /**
@@ -8,8 +8,12 @@ import { useNavigate } from 'react-router-dom';
  */
 export const useIncomingCall = () => {
   const navigate = useNavigate();
+  const setupDoneRef = useRef(false);
 
   useEffect(() => {
+    // Prevent duplicate setup from React strict mode
+    if (setupDoneRef.current) return;
+
     let cleanup: (() => void) | undefined;
 
     const setup = async () => {
@@ -42,6 +46,8 @@ export const useIncomingCall = () => {
             }
           }
         );
+
+        setupDoneRef.current = true;
 
         cleanup = () => {
           listener.remove();
