@@ -137,6 +137,18 @@ const RouteMapPreview = ({ stops, onReorder, lang }: Props) => {
     toast.success(lang === 'ar' ? 'تم تحديث الموقع' : 'Location updated');
   }, [stops, onReorder, lang]);
 
+  const handleMapClick = useCallback(async (e: google.maps.MapMouseEvent) => {
+    if (!addingStop || !e.latLng) return;
+    const lat = e.latLng.lat();
+    const lng = e.latLng.lng();
+    const name = await reverseGeocode(lat, lng);
+    const maxLinkIdx = stops.length > 0 ? Math.max(...stops.map(s => s.linkIdx)) + 1 : 0;
+    const newStop: OrderedStop = { lat, lng, name, linkIdx: maxLinkIdx, type: addStopType };
+    onReorder([...stops, newStop]);
+    setAddingStop(false);
+    toast.success(lang === 'ar' ? 'تمت إضافة المحطة' : 'Stop added');
+  }, [addingStop, addStopType, stops, onReorder, lang]);
+
   const deleteStop = useCallback((idx: number) => {
     const newStops = stops.filter((_, i) => i !== idx);
     onReorder(newStops);
