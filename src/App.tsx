@@ -1,4 +1,4 @@
-import React, { Suspense } from "react";
+import React, { Suspense, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -42,6 +42,55 @@ const queryClient = new QueryClient();
 
 const AppMobileServices = () => {
   useIncomingCall();
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const setInset = (px: number) => root.style.setProperty("--kb-inset", `${px}px`);
+    setInset(0);
+
+    let cleanupNative: (() => void) | undefined;
+    let usingNative = false;
+
+    (async () => {
+      try {
+        const { Capacitor } = await import("@capacitor/core");
+        if (Capacitor.isNativePlatform()) {
+          const { Keyboard } = await import("@capacitor/keyboard");
+          usingNative = true;
+          const showSub = await Keyboard.addListener("keyboardWillShow", (info) => {
+            setInset(info.keyboardHeight || 0);
+          });
+          const hideSub = await Keyboard.addListener("keyboardWillHide", () => {
+            setInset(0);
+          });
+          cleanupNative = () => {
+            showSub.remove();
+            hideSub.remove();
+          };
+        }
+      } catch {
+        // ignore — fallback below
+      }
+    })();
+
+    // Web/visualViewport fallback
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    const onVV = () => {
+      if (usingNative || !vv) return;
+      const diff = window.innerHeight - vv.height - vv.offsetTop;
+      setInset(diff > 80 ? diff : 0);
+    };
+    vv?.addEventListener("resize", onVV);
+    vv?.addEventListener("scroll", onVV);
+
+    return () => {
+      cleanupNative?.();
+      vv?.removeEventListener("resize", onVV);
+      vv?.removeEventListener("scroll", onVV);
+      setInset(0);
+    };
+  }, []);
+
   return null;
 };
 

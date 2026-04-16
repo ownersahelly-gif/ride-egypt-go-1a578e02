@@ -202,9 +202,18 @@ const PlacesAutocomplete = ({ placeholder, value, onSelect, iconColor = 'text-pr
         onChange={(e) => {
           void handleInput(e.target.value);
         }}
-        onFocus={() => {
+        onFocus={(e) => {
           void ensureGoogleReady();
           if (predictions.length > 0) setShowDropdown(true);
+          const target = e.currentTarget;
+          // Wait for keyboard animation, then scroll the input into view
+          window.setTimeout(() => {
+            try {
+              target.scrollIntoView({ block: "center", behavior: "smooth" });
+            } catch {
+              target.scrollIntoView();
+            }
+          }, 350);
         }}
       />
 
