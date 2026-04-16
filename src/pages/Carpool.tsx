@@ -12,7 +12,7 @@ import MapView from '@/components/MapView';
 import {
   Plus, MapPin, Clock, Users, Fuel, RefreshCw, Car,
   ChevronRight, ChevronLeft, Search, Filter, Shield, AlertCircle,
-  Map, List, X, Navigation, Building2
+  Map, List, X, Navigation, Building2, Check
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -61,12 +61,17 @@ const Carpool = () => {
   const [sortBy, setSortBy] = useState<string>('recent');
   const [showFilters, setShowFilters] = useState(false);
 
-  // Request a community
+  // Request a community (multi-step)
   const [requestOpen, setRequestOpen] = useState(false);
+  const [reqStep, setReqStep] = useState<1 | 2 | 3>(1);
   const [reqName, setReqName] = useState('');
   const [reqDescription, setReqDescription] = useState('');
-  const [reqContact, setReqContact] = useState('');
   const [reqSubmitting, setReqSubmitting] = useState(false);
+
+  const openRequestDialog = () => {
+    setReqName(''); setReqDescription(''); setReqStep(1);
+    setRequestOpen(true);
+  };
 
   const submitCommunityRequest = async () => {
     if (!user || !reqName.trim()) return;
@@ -75,19 +80,13 @@ const Carpool = () => {
       user_id: user.id,
       name: reqName.trim(),
       description: reqDescription.trim() || null,
-      contact: reqContact.trim() || null,
     });
     setReqSubmitting(false);
     if (error) {
       toast({ title: lang === 'ar' ? 'خطأ' : 'Error', description: error.message, variant: 'destructive' });
       return;
     }
-    toast({
-      title: lang === 'ar' ? 'تم الإرسال' : 'Request sent',
-      description: lang === 'ar' ? 'سيراجع الإدمن طلبك قريباً' : 'Admins will review your request soon.',
-    });
-    setRequestOpen(false);
-    setReqName(''); setReqDescription(''); setReqContact('');
+    setReqStep(3);
   };
 
   // Get user location on mount
@@ -306,7 +305,7 @@ const Carpool = () => {
                     <Building2 className="w-3.5 h-3.5 mr-1" />
                     {lang === 'ar' ? 'استكشاف المجتمعات' : 'Browse communities'}
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => setRequestOpen(true)}>
+                  <Button size="sm" variant="outline" onClick={openRequestDialog}>
                     <Plus className="w-3.5 h-3.5 mr-1" />
                     {lang === 'ar' ? 'طلب مجتمع جديد' : 'Request a community'}
                   </Button>
@@ -654,54 +653,85 @@ const Carpool = () => {
         )}
       </div>
 
-      <Dialog open={requestOpen} onOpenChange={setRequestOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{lang === 'ar' ? 'طلب مجتمع جديد' : 'Request a new community'}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <label className="text-sm font-medium mb-1 block">
-                {lang === 'ar' ? 'اسم المجتمع' : 'Community name'} <span className="text-destructive">*</span>
-              </label>
-              <Input
-                value={reqName}
-                onChange={e => setReqName(e.target.value)}
-                placeholder={lang === 'ar' ? 'مثال: AUC, GUC, مجمع سكني' : 'e.g. AUC, GUC, residential compound'}
-              />
+      <Dialog open={requestOpen} onOpenChange={(o) => { if (!reqSubmitting) setRequestOpen(o); }}>
+        <DialogContent className="max-w-md">
+          {reqStep === 1 && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{lang === 'ar' ? 'اسم المجتمع' : 'Community name'}</DialogTitle>
+                <p className="text-sm text-muted-foreground">
+                  {lang === 'ar' ? 'الخطوة 1 من 2' : 'Step 1 of 2'}
+                </p>
+              </DialogHeader>
+              <div className="py-2">
+                <Input
+                  autoFocus
+                  value={reqName}
+                  onChange={e => setReqName(e.target.value)}
+                  placeholder={lang === 'ar' ? 'مثال: AUC, GUC, مجمع سكني' : 'e.g. AUC, GUC, residential compound'}
+                  className="!text-base"
+                  style={{ fontSize: '16px' }}
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setRequestOpen(false)}>
+                  {lang === 'ar' ? 'إلغاء' : 'Cancel'}
+                </Button>
+                <Button onClick={() => setReqStep(2)} disabled={!reqName.trim()}>
+                  {lang === 'ar' ? 'التالي' : 'Next'}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+
+          {reqStep === 2 && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{lang === 'ar' ? 'وصف المجتمع' : 'Description'}</DialogTitle>
+                <p className="text-sm text-muted-foreground">
+                  {lang === 'ar' ? 'الخطوة 2 من 2' : 'Step 2 of 2'}
+                </p>
+              </DialogHeader>
+              <div className="py-2">
+                <Textarea
+                  autoFocus
+                  value={reqDescription}
+                  onChange={e => setReqDescription(e.target.value)}
+                  placeholder={lang === 'ar' ? 'ما هذا المجتمع؟ كم العدد؟' : 'What is this community? How many people?'}
+                  rows={4}
+                  className="!text-base"
+                  style={{ fontSize: '16px' }}
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setReqStep(1)} disabled={reqSubmitting}>
+                  {lang === 'ar' ? 'رجوع' : 'Back'}
+                </Button>
+                <Button onClick={submitCommunityRequest} disabled={reqSubmitting}>
+                  {reqSubmitting
+                    ? (lang === 'ar' ? 'جاري الإرسال...' : 'Sending...')
+                    : (lang === 'ar' ? 'إرسال' : 'Submit')}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+
+          {reqStep === 3 && (
+            <div className="py-8 text-center space-y-3">
+              <div className="mx-auto w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
+                <Check className="w-7 h-7 text-primary" />
+              </div>
+              <h3 className="text-lg font-semibold">
+                {lang === 'ar' ? 'شكراً لك!' : 'Thank you!'}
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {lang === 'ar' ? 'تم إرسال طلبك. سيراجعه الإدمن قريباً.' : 'Your request has been sent. Admins will review it soon.'}
+              </p>
+              <Button onClick={() => setRequestOpen(false)} className="mt-2">
+                {lang === 'ar' ? 'تم' : 'Done'}
+              </Button>
             </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">
-                {lang === 'ar' ? 'وصف المجتمع' : 'Description'}
-              </label>
-              <Textarea
-                value={reqDescription}
-                onChange={e => setReqDescription(e.target.value)}
-                placeholder={lang === 'ar' ? 'ما هذا المجتمع؟ كم العدد؟' : 'What is this community? How many people?'}
-                rows={3}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">
-                {lang === 'ar' ? 'بيانات تواصل (اختياري)' : 'Contact info (optional)'}
-              </label>
-              <Input
-                value={reqContact}
-                onChange={e => setReqContact(e.target.value)}
-                placeholder={lang === 'ar' ? 'هاتف أو بريد إلكتروني' : 'Phone or email'}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRequestOpen(false)} disabled={reqSubmitting}>
-              {lang === 'ar' ? 'إلغاء' : 'Cancel'}
-            </Button>
-            <Button onClick={submitCommunityRequest} disabled={reqSubmitting || !reqName.trim()}>
-              {reqSubmitting
-                ? (lang === 'ar' ? 'جاري الإرسال...' : 'Sending...')
-                : (lang === 'ar' ? 'إرسال للمراجعة' : 'Send for review')}
-            </Button>
-          </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
 
