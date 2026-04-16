@@ -1116,13 +1116,13 @@ const Dashboard = () => {
       <div
         className={`${mapVisible ? "shrink-0" : "flex-1 min-h-0"} overflow-y-auto bg-card border-t border-border`}
         style={{
-          maxHeight: mapVisible ? "50dvh" : undefined,
-          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 1rem)",
+          maxHeight: mapVisible ? (step === "search" ? "auto" : "50dvh") : undefined,
+          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.5rem)",
           WebkitOverflowScrolling: "touch",
         }}
       >
         {step === "search" && (
-          <div className="p-4 space-y-4">
+          <div className="px-4 pt-3 pb-2 space-y-2.5">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-foreground">
                 {lang === "ar" ? "إلى أين تريد الذهاب؟" : "Where are you going?"}
