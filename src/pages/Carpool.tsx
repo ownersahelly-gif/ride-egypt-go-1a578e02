@@ -12,7 +12,7 @@ import MapView from '@/components/MapView';
 import {
   Plus, MapPin, Clock, Users, Fuel, RefreshCw, Car,
   ChevronRight, ChevronLeft, Search, Filter, Shield, AlertCircle,
-  Map, List, X, Navigation
+  Map, List, X, Navigation, Building2
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -40,6 +40,8 @@ const Carpool = () => {
   const [myRequests, setMyRequests] = useState<any[]>([]);
   const [verification, setVerification] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [communities, setCommunities] = useState<Record<string, any>>({});
+  const [approvedCommunityCount, setApprovedCommunityCount] = useState(0);
   const [searchFrom, setSearchFrom] = useState('');
   const [searchTo, setSearchTo] = useState('');
   const [searchFromCoords, setSearchFromCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -105,15 +107,21 @@ const Carpool = () => {
 
   const fetchData = async () => {
     setLoading(true);
-    const [routesRes, requestsRes, verRes] = await Promise.all([
+    const [routesRes, requestsRes, verRes, membershipRes, communitiesRes] = await Promise.all([
       supabase.from('carpool_routes').select('*').eq('status', 'active').order('created_at', { ascending: false }),
       supabase.from('carpool_requests').select('*, carpool_routes(*)').eq('user_id', user!.id),
       supabase.from('carpool_verifications').select('*').eq('user_id', user!.id).maybeSingle(),
+      supabase.from('community_memberships').select('community_id, status').eq('user_id', user!.id).eq('status', 'approved'),
+      supabase.from('communities').select('id, name_en, name_ar').eq('status', 'active'),
     ]);
     const dbRoutes = routesRes.data || [];
     setRoutes(dbRoutes);
     setMyRequests(requestsRes.data || []);
     setVerification(verRes.data);
+    const cMap: Record<string, any> = {};
+    (communitiesRes.data || []).forEach((c: any) => { cMap[c.id] = c; });
+    setCommunities(cMap);
+    setApprovedCommunityCount((membershipRes.data || []).length);
     setLoading(false);
   };
 
@@ -244,6 +252,31 @@ const Carpool = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24">
+        {/* Join community banner */}
+        {!loading && approvedCommunityCount === 0 && (
+          <Card className="border-primary/40 bg-primary/5">
+            <CardContent className="p-4 flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
+                <Building2 className="w-5 h-5 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold">
+                  {lang === 'ar' ? 'انضم لمجتمع لرؤية الرحلات' : 'Join a community to see rides'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {lang === 'ar'
+                    ? 'الرحلات خاصة بأعضاء كل مجتمع. تقدّم للانضمام لرؤية ونشر الرحلات.'
+                    : 'Carpool rides are private to each community. Apply to join one to browse and post rides.'}
+                </p>
+                <Button size="sm" className="mt-2" onClick={() => navigate('/communities')}>
+                  <Building2 className="w-3.5 h-3.5 mr-1" />
+                  {lang === 'ar' ? 'استكشاف المجتمعات' : 'Browse communities'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {tab === 'browse' && (
           <>
             {/* Search From / To */}
@@ -422,6 +455,14 @@ const Carpool = () => {
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex-1 min-w-0">
+                          {route.community_id && communities[route.community_id] && (
+                            <Badge variant="outline" className="text-[10px] mb-1.5 gap-1">
+                              <Building2 className="w-2.5 h-2.5" />
+                              {lang === 'ar'
+                                ? communities[route.community_id].name_ar
+                                : communities[route.community_id].name_en}
+                            </Badge>
+                          )}
                           <div className="flex items-center gap-2 mb-1">
                             <div className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
                             <p className="text-sm font-medium truncate">{route.origin_name}</p>
