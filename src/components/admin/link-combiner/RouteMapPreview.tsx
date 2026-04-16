@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GoogleMap, Marker, Polyline } from '@react-google-maps/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Copy, ExternalLink, MapPin, Trash2, GripVertical, Loader2, Save, Plus } from 'lucide-react';
+import { Copy, ExternalLink, MapPin, Trash2, GripVertical, Loader2, Save, Plus, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import type { OrderedStop } from './types';
+import { parseGoogleMapsLink } from './utils';
 import { buildGoogleMapsLink, haversine } from './utils';
 
 /** Reverse-geocode a position to get a readable address */
@@ -45,6 +46,9 @@ const RouteMapPreview = ({ stops, onReorder, lang }: Props) => {
   const [saving, setSaving] = useState(false);
   const [addingStop, setAddingStop] = useState(false);
   const [addStopType, setAddStopType] = useState<'P' | 'D'>('P');
+  const [addStopMode, setAddStopMode] = useState<'map' | 'link'>('map');
+  const [linkInput, setLinkInput] = useState('');
+  const [linkParsing, setLinkParsing] = useState(false);
   const [initialCenter] = useState<google.maps.LatLngLiteral>(() => {
     if (stops.length === 0) return { lat: 30.05, lng: 31.25 };
     const lat = stops.reduce((sum, stop) => sum + stop.lat, 0) / stops.length;
@@ -138,7 +142,7 @@ const RouteMapPreview = ({ stops, onReorder, lang }: Props) => {
   }, [stops, onReorder, lang]);
 
   const handleMapClick = useCallback(async (e: google.maps.MapMouseEvent) => {
-    if (!addingStop || !e.latLng) return;
+    if (!addingStop || addStopMode !== 'map' || !e.latLng) return;
     const lat = e.latLng.lat();
     const lng = e.latLng.lng();
     const name = await reverseGeocode(lat, lng);
@@ -154,6 +158,29 @@ const RouteMapPreview = ({ stops, onReorder, lang }: Props) => {
     onReorder(newStops);
     toast.success(lang === 'ar' ? 'تم حذف المحطة' : 'Stop removed');
   }, [stops, onReorder, lang]);
+
+  const handleAddViaLink = useCallback(async () => {
+    const trimmed = linkInput.trim();
+    if (!trimmed) return;
+    setLinkParsing(true);
+    try {
+      const parsed = await parseGoogleMapsLink(trimmed);
+      if (!parsed) throw new Error('Could not parse link');
+      const maxLinkIdx = stops.length > 0 ? Math.max(...stops.map(s => s.linkIdx)) + 1 : 0;
+      const newStops: OrderedStop[] = [
+        ...stops,
+        { lat: parsed.origin.lat, lng: parsed.origin.lng, name: parsed.origin.name, linkIdx: maxLinkIdx, type: 'P' },
+        { lat: parsed.destination.lat, lng: parsed.destination.lng, name: parsed.destination.name, linkIdx: maxLinkIdx, type: 'D' },
+      ];
+      onReorder(newStops);
+      setLinkInput('');
+      setAddingStop(false);
+      toast.success(lang === 'ar' ? 'تمت إضافة محطتين من الرابط' : 'Added pickup & dropoff from link');
+    } catch (err: any) {
+      toast.error(err.message || (lang === 'ar' ? 'تعذر تحليل الرابط' : 'Could not parse link'));
+    }
+    setLinkParsing(false);
+  }, [linkInput, stops, onReorder, lang]);
 
   const handleDragStart = (idx: number) => {
     setDragIdx(idx);
@@ -232,7 +259,7 @@ const RouteMapPreview = ({ stops, onReorder, lang }: Props) => {
             {lang === 'ar' ? 'جارِ تحميل المسار...' : 'Loading route...'}
           </div>
         )}
-        {addingStop && (
+        {addingStop && addStopMode === 'map' && (
           <div className="absolute top-2 right-2 z-10 bg-primary text-primary-foreground rounded-md px-3 py-1.5 text-xs font-medium animate-pulse">
             {lang === 'ar' ? 'انقر على الخريطة لإضافة محطة' : 'Click on the map to add a stop'}
           </div>
@@ -362,33 +389,69 @@ const RouteMapPreview = ({ stops, onReorder, lang }: Props) => {
         ))}
       </div>
 
-      {/* Add stop button */}
-      <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          variant={addingStop ? 'default' : 'outline'}
-          onClick={() => setAddingStop(!addingStop)}
-          className="gap-1.5"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          {addingStop
-            ? (lang === 'ar' ? 'إلغاء' : 'Cancel')
-            : (lang === 'ar' ? 'إضافة محطة' : 'Add Stop')}
-        </Button>
-        {addingStop && (
-          <div className="flex items-center gap-1 text-xs">
-            <button
-              onClick={() => setAddStopType('P')}
-              className={`px-2 py-0.5 rounded ${addStopType === 'P' ? 'bg-emerald-500 text-white' : 'bg-muted text-muted-foreground'}`}
-            >
-              {lang === 'ar' ? 'التقاط' : 'Pickup'}
-            </button>
-            <button
-              onClick={() => setAddStopType('D')}
-              className={`px-2 py-0.5 rounded ${addStopType === 'D' ? 'bg-destructive text-white' : 'bg-muted text-muted-foreground'}`}
-            >
-              {lang === 'ar' ? 'توصيل' : 'Dropoff'}
-            </button>
+      {/* Add stop section */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant={addingStop ? 'default' : 'outline'}
+            onClick={() => { setAddingStop(!addingStop); setAddStopMode('map'); }}
+            className="gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            {addingStop
+              ? (lang === 'ar' ? 'إلغاء' : 'Cancel')
+              : (lang === 'ar' ? 'إضافة محطة' : 'Add Stop')}
+          </Button>
+          {addingStop && (
+            <>
+              <div className="flex items-center gap-1 text-xs">
+                <button
+                  onClick={() => setAddStopMode('map')}
+                  className={`px-2 py-0.5 rounded ${addStopMode === 'map' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
+                >
+                  {lang === 'ar' ? 'خريطة' : 'Map'}
+                </button>
+                <button
+                  onClick={() => setAddStopMode('link')}
+                  className={`px-2 py-0.5 rounded ${addStopMode === 'link' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
+                >
+                  <Link2 className="w-3 h-3 inline-block me-1" />
+                  {lang === 'ar' ? 'رابط' : 'Link'}
+                </button>
+              </div>
+              {addStopMode === 'map' && (
+                <div className="flex items-center gap-1 text-xs">
+                  <button
+                    onClick={() => setAddStopType('P')}
+                    className={`px-2 py-0.5 rounded ${addStopType === 'P' ? 'bg-emerald-500 text-white' : 'bg-muted text-muted-foreground'}`}
+                  >
+                    {lang === 'ar' ? 'التقاط' : 'Pickup'}
+                  </button>
+                  <button
+                    onClick={() => setAddStopType('D')}
+                    className={`px-2 py-0.5 rounded ${addStopType === 'D' ? 'bg-destructive text-white' : 'bg-muted text-muted-foreground'}`}
+                  >
+                    {lang === 'ar' ? 'توصيل' : 'Dropoff'}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        {addingStop && addStopMode === 'link' && (
+          <div className="flex gap-2">
+            <Input
+              className="flex-1 text-xs"
+              placeholder={lang === 'ar' ? 'الصق رابط Google Maps هنا...' : 'Paste a Google Maps link here...'}
+              value={linkInput}
+              onChange={e => setLinkInput(e.target.value)}
+              disabled={linkParsing}
+              onKeyDown={e => { if (e.key === 'Enter' && linkInput.trim()) handleAddViaLink(); }}
+            />
+            <Button size="sm" disabled={!linkInput.trim() || linkParsing} onClick={handleAddViaLink}>
+              {linkParsing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+            </Button>
           </div>
         )}
       </div>
