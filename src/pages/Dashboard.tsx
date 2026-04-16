@@ -1041,7 +1041,16 @@ const Dashboard = () => {
         </Link>
       )}
 
-      <div className={`${mapVisible ? "flex-1 min-h-0" : "hidden"} relative bg-muted`}>
+      <div
+        className={cn(
+          "relative bg-muted",
+          !mapVisible
+            ? "hidden"
+            : step === "details"
+              ? "flex-1 min-h-0"
+              : "shrink-0 h-[34dvh] min-h-[260px] max-h-[420px]",
+        )}
+      >
         <Suspense
           fallback={
             <div className="flex h-full w-full items-center justify-center text-muted-foreground">
@@ -1053,6 +1062,7 @@ const Dashboard = () => {
           }
         >
           <MapView
+            key={step === "details" ? `details-${selectedRide?.route_id || "none"}` : `search-${pickup?.lat || "none"}-${pickup?.lng || "none"}-${dropoff?.lat || "none"}-${dropoff?.lng || "none"}`}
             className="h-full w-full rounded-none"
             markers={mapMarkers}
             origin={

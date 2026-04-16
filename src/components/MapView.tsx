@@ -1,4 +1,5 @@
 import { useCallback, useState, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { GoogleMap, useJsApiLoader, Marker, DirectionsRenderer, Polyline } from '@react-google-maps/api';
 import { Loader2, LocateFixed } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -51,9 +52,25 @@ const MapView = ({
     libraries,
   });
 
+  const isNativeApp = Capacitor.isNativePlatform();
+
   const onLoad = useCallback((map: google.maps.Map) => {
     setMapRef(map);
-  }, []);
+
+    const triggerResize = (delay: number) => {
+      window.setTimeout(() => {
+        google.maps.event.trigger(map, 'resize');
+        const centerPoint = center || origin || destination || markers[0] || cairoCenter;
+        if (centerPoint) {
+          map.panTo({ lat: centerPoint.lat, lng: centerPoint.lng });
+        }
+      }, delay);
+    };
+
+    triggerResize(0);
+    triggerResize(250);
+    triggerResize(700);
+  }, [center, destination, markers, origin]);
 
   // Auto-fit bounds to markers / origin / destination
   useEffect(() => {
@@ -219,6 +236,13 @@ const MapView = ({
           fullscreenControl: false,
           gestureHandling,
           clickableIcons: false,
+          backgroundColor: '#f3f4f6',
+        }}
+        onTilesLoaded={() => {
+          if (!isNativeApp || !mapRef) return;
+          window.setTimeout(() => {
+            google.maps.event.trigger(mapRef, 'resize');
+          }, 50);
         }}
       >
         {markers.map((marker, i) => {
