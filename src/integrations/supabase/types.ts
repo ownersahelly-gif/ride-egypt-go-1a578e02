@@ -320,6 +320,7 @@ export type Database = {
           available_seats: number
           community_id: string | null
           created_at: string
+          day_time_overrides: Json
           days_of_week: number[] | null
           departure_time: string
           destination_lat: number
@@ -345,6 +346,7 @@ export type Database = {
           available_seats?: number
           community_id?: string | null
           created_at?: string
+          day_time_overrides?: Json
           days_of_week?: number[] | null
           departure_time: string
           destination_lat: number
@@ -370,6 +372,7 @@ export type Database = {
           available_seats?: number
           community_id?: string | null
           created_at?: string
+          day_time_overrides?: Json
           days_of_week?: number[] | null
           departure_time?: string
           destination_lat?: number
