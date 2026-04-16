@@ -45,7 +45,13 @@ const AppMobileServices = () => {
 
   useEffect(() => {
     const root = document.documentElement;
-    const setInset = (px: number) => root.style.setProperty("--kb-inset", `${px}px`);
+    const setInset = (px: number) => {
+      root.style.setProperty("--kb-inset", `${px}px`);
+      const open = px > 0 ? "true" : "false";
+      document.querySelectorAll("[data-bottom-nav]").forEach((el) => {
+        (el as HTMLElement).dataset.kbOpen = open;
+      });
+    };
     setInset(0);
 
     let cleanupNative: (() => void) | undefined;
