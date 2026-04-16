@@ -815,7 +815,7 @@ const Dashboard = () => {
   const dateOptions = getDateOptions();
 
   const mapMarkers: { lat: number; lng: number; label?: string; color?: "red" | "green" | "blue" }[] = [];
-  if (step === "search") {
+  if (step === "search" || step === "results") {
     if (pickup) mapMarkers.push({ lat: pickup.lat, lng: pickup.lng, label: "A", color: "green" });
     if (dropoff) mapMarkers.push({ lat: dropoff.lat, lng: dropoff.lng, label: "B", color: "red" });
   }
