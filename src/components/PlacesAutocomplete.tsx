@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Input } from '@/components/ui/input';
-import { MapPin, Loader2 } from 'lucide-react';
+import { Loader2, LocateFixed, MapPin } from 'lucide-react';
+import { toast } from 'sonner';
 
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -58,9 +59,19 @@ interface PlacesAutocompleteProps {
   onSelect: (place: { name: string; lat: number; lng: number }) => void;
   iconColor?: string;
   className?: string;
+  showCurrentLocation?: boolean;
+  currentLocationLabel?: string;
 }
 
-const PlacesAutocomplete = ({ placeholder, value, onSelect, iconColor = 'text-primary', className }: PlacesAutocompleteProps) => {
+const PlacesAutocomplete = ({
+  placeholder,
+  value,
+  onSelect,
+  iconColor = 'text-primary',
+  className,
+  showCurrentLocation = false,
+  currentLocationLabel = 'Use my current location',
+}: PlacesAutocompleteProps) => {
   const [inputValue, setInputValue] = useState(value || '');
   const [predictions, setPredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
