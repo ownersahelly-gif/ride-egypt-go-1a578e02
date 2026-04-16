@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -83,28 +83,32 @@ export default function CommunitiesAdmin({ lang }: { lang: 'en' | 'ar' }) {
     status: 'active',
   });
 
-  useEffect(() => {
-    if (session?.access_token) fetchAll();
+  const adminClient = useMemo<SupabaseClient | null>(() => {
+    if (!session?.access_token) return null;
+    return createClient(
+      import.meta.env.VITE_SUPABASE_URL,
+      import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      {
+        auth: { persistSession: false, autoRefreshToken: false, storageKey: 'admin-client-token' },
+        global: { headers: { Authorization: `Bearer ${session.access_token}` } },
+      }
+    );
   }, [session?.access_token]);
 
+  useEffect(() => {
+    if (adminClient) fetchAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminClient]);
+
   const getAdminClient = () => {
-    if (!session?.access_token) {
+    if (!adminClient) {
       toast({
         title: lang === 'ar' ? 'انتهت الجلسة' : 'Session expired',
         description: lang === 'ar' ? 'سجّل الدخول مرة أخرى ثم أعد المحاولة' : 'Please sign in again and try once more.',
         variant: 'destructive',
       });
-      return null;
     }
-
-    return createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      },
-    });
+    return adminClient;
   };
 
   const fetchAll = async () => {
@@ -216,9 +220,9 @@ export default function CommunitiesAdmin({ lang }: { lang: 'en' | 'ar' }) {
 
   const addQuestion = async (communityId: string) => {
     const existing = questions[communityId] || [];
-    const adminClient = getAdminClient();
-    if (!adminClient) return;
-    const { error } = await adminClient.from('community_verification_questions').insert({
+    const client = getAdminClient();
+    if (!client) return;
+    const { data, error } = await client.from('community_verification_questions').insert({
       community_id: communityId,
       label_en: 'New question',
       label_ar: 'سؤال جديد',
@@ -226,26 +230,45 @@ export default function CommunitiesAdmin({ lang }: { lang: 'en' | 'ar' }) {
       required: true,
       sort_order: existing.length,
       options: [],
-    });
+    }).select().single();
     if (error) { toast({ title: error.message, variant: 'destructive' }); return; }
-    fetchAll();
+    setQuestions(prev => ({
+      ...prev,
+      [communityId]: [...(prev[communityId] || []), data as Question],
+    }));
   };
 
-  const updateQuestion = async (q: Question, patch: Partial<Question>) => {
-    const adminClient = getAdminClient();
-    if (!adminClient) return;
-    const { error } = await adminClient.from('community_verification_questions')
-      .update(patch).eq('id', q.id);
-    if (error) { toast({ title: error.message, variant: 'destructive' }); return; }
-    fetchAll();
+  const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const updateQuestion = (q: Question, patch: Partial<Question>) => {
+    // Update local state immediately so the input doesn't lose focus / re-mount.
+    setQuestions(prev => {
+      const list = prev[q.community_id] || [];
+      return {
+        ...prev,
+        [q.community_id]: list.map(x => x.id === q.id ? { ...x, ...patch } : x),
+      };
+    });
+    // Debounce the DB write so we don't fire on every keystroke.
+    if (saveTimers.current[q.id]) clearTimeout(saveTimers.current[q.id]);
+    saveTimers.current[q.id] = setTimeout(async () => {
+      const client = getAdminClient();
+      if (!client) return;
+      const { error } = await client.from('community_verification_questions')
+        .update(patch).eq('id', q.id);
+      if (error) toast({ title: error.message, variant: 'destructive' });
+    }, 500);
   };
 
   const deleteQuestion = async (id: string) => {
     if (!confirm(lang === 'ar' ? 'حذف السؤال؟' : 'Delete question?')) return;
-    const adminClient = getAdminClient();
-    if (!adminClient) return;
-    await adminClient.from('community_verification_questions').delete().eq('id', id);
-    fetchAll();
+    const client = getAdminClient();
+    if (!client) return;
+    await client.from('community_verification_questions').delete().eq('id', id);
+    setQuestions(prev => {
+      const next: Record<string, Question[]> = {};
+      Object.entries(prev).forEach(([cid, list]) => { next[cid] = list.filter(q => q.id !== id); });
+      return next;
+    });
   };
 
   const loadMembershipAnswers = async (membershipId: string) => {
