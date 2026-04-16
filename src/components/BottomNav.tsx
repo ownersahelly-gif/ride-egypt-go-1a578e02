@@ -18,15 +18,13 @@ const BottomNav = () => {
   return (
     <nav
       data-bottom-nav
-      className="fixed bottom-0 left-0 right-0 z-[9999] border-t border-border bg-card transition-transform duration-150"
+      className="fixed bottom-0 left-0 right-0 z-[9999] border-t border-border bg-card data-[kb-open=true]:hidden"
       style={{
         height: "calc(4rem + env(safe-area-inset-bottom, 0px))",
         paddingBottom: "env(safe-area-inset-bottom, 0px)",
         WebkitTransform: "translate3d(0,0,0)",
         transform: "translate3d(0,0,0)",
         backgroundColor: "hsl(var(--card))",
-        // Hide nav when on-screen keyboard is open
-        visibility: "var(--kb-visibility, visible)" as any,
       }}
     >
       <div className="grid grid-cols-5" style={{ height: "4rem" }}>
