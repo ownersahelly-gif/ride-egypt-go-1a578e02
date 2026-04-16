@@ -75,6 +75,7 @@ export default function CommunitiesAdmin({ lang }: { lang: 'en' | 'ar' }) {
   const [editing, setEditing] = useState<Community | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [communityRequests, setCommunityRequests] = useState<any[]>([]);
 
   // Community form state
   const [form, setForm] = useState({
