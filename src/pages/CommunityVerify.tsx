@@ -55,12 +55,10 @@ export default function CommunityVerify() {
     setAnswers(prev => ({ ...prev, [qId]: { ...prev[qId], file: file || undefined } }));
 
   const uploadFile = async (file: File, qId: string): Promise<string> => {
+    const { uploadToBunny } = await import('@/lib/bunnyUpload');
     const ext = file.name.split('.').pop();
-    const path = `${user!.id}/${communityId}/${qId}_${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from('community-verifications').upload(path, file, { upsert: true });
-    if (error) throw error;
-    const { data } = supabase.storage.from('community-verifications').getPublicUrl(path);
-    return data.publicUrl;
+    const path = `community-verifications/${user!.id}/${communityId}/${qId}_${Date.now()}.${ext}`;
+    return await uploadToBunny(file, path);
   };
 
   const handleSubmit = async () => {
