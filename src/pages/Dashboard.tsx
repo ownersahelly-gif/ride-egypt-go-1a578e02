@@ -24,7 +24,6 @@ import {
   ListOrdered,
   History,
   Package,
-  Globe,
   LogOut,
   Shield,
   ChevronLeft,
@@ -929,9 +928,9 @@ const Dashboard = () => {
 
   return (
     <div
-      className="h-[100dvh] flex flex-col overflow-hidden bg-surface"
+      className="h-[100dvh] flex flex-col overflow-hidden bg-surface transition-[padding] duration-200"
       style={{
-        paddingBottom: "calc(4rem + env(safe-area-inset-bottom, 0px))",
+        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + max(4rem, var(--kb-inset, 0px)))",
         paddingTop: "env(safe-area-inset-top, 0px)",
       }}
     >
@@ -953,9 +952,8 @@ const Dashboard = () => {
               )}
               <button
                 onClick={() => setLang(lang === "en" ? "ar" : "en")}
-                className="rounded-full px-2.5 py-1.5 hover:bg-muted transition-colors flex items-center gap-1 text-xs font-medium"
+                className="rounded-full px-2.5 py-1.5 hover:bg-muted transition-colors text-xs font-medium"
               >
-                <Globe className="w-4 h-4" />
                 {lang === "en" ? "عربي" : "EN"}
               </button>
               <Button variant="ghost" size="icon" className="rounded-full" onClick={handleSignOut}>
@@ -966,9 +964,8 @@ const Dashboard = () => {
             <>
               <button
                 onClick={() => setLang(lang === "en" ? "ar" : "en")}
-                className="rounded-full px-2.5 py-1.5 hover:bg-muted transition-colors flex items-center gap-1 text-xs font-medium"
+                className="rounded-full px-2.5 py-1.5 hover:bg-muted transition-colors text-xs font-medium"
               >
-                <Globe className="w-4 h-4" />
                 {lang === "en" ? "عربي" : "EN"}
               </button>
               <Link to="/login">
@@ -1067,10 +1064,13 @@ const Dashboard = () => {
       </div>
 
       <div
+        data-keyboard-scroll-container
         className="shrink-0 overflow-y-auto bg-card border-t border-border"
         style={{
           maxHeight: "50dvh",
-          paddingBottom: "calc(var(--kb-inset, 0px) + 1.5rem)",
+          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 1rem)",
+          scrollPaddingTop: "4rem",
+          scrollPaddingBottom: "8rem",
           WebkitOverflowScrolling: "touch",
         }}
       >

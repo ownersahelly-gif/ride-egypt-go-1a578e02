@@ -61,7 +61,19 @@ const AppMobileServices = () => {
       try {
         const { Capacitor } = await import("@capacitor/core");
         if (Capacitor.isNativePlatform()) {
-          const { Keyboard } = await import("@capacitor/keyboard");
+          const { Keyboard, KeyboardResize } = await import("@capacitor/keyboard");
+          try {
+            await Keyboard.setResizeMode({ mode: KeyboardResize.Native });
+          } catch {
+            // ignore if unsupported on this runtime
+          }
+
+          try {
+            await Keyboard.setScroll({ isDisabled: false });
+          } catch {
+            // ignore if unsupported on this runtime
+          }
+
           usingNative = true;
           const showSub = await Keyboard.addListener("keyboardWillShow", (info) => {
             setInset(info.keyboardHeight || 0);
