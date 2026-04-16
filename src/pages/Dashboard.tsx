@@ -1066,7 +1066,14 @@ const Dashboard = () => {
         )}
       </div>
 
-      <div className="shrink-0 overflow-y-auto bg-card border-t border-border pb-6" style={{ maxHeight: "50dvh" }}>
+      <div
+        className="shrink-0 overflow-y-auto bg-card border-t border-border"
+        style={{
+          maxHeight: "50dvh",
+          paddingBottom: "calc(var(--kb-inset, 0px) + 1.5rem)",
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
         {step === "search" && (
           <div className="p-4 space-y-4">
             <div className="flex items-center justify-between">
