@@ -65,14 +65,33 @@ const MapView = ({
     markers.forEach((m) => points.push({ lat: m.lat, lng: m.lng }));
 
     if (points.length === 0) return;
-    if (points.length === 1) {
-      mapRef.panTo(points[0]);
-      mapRef.setZoom(15);
-      return;
+
+    const applyBounds = () => {
+      if (points.length === 1) {
+        mapRef.panTo(points[0]);
+        mapRef.setZoom(15);
+        return;
+      }
+      const bounds = new google.maps.LatLngBounds();
+      points.forEach((p) => bounds.extend(p));
+      mapRef.fitBounds(bounds, { top: 80, bottom: 80, left: 60, right: 60 });
+    };
+
+    // Wait for the map div to have real dimensions before fitting
+    const div = mapRef.getDiv() as HTMLElement;
+    if (div && div.offsetWidth > 0 && div.offsetHeight > 0) {
+      applyBounds();
+    } else {
+      const listener = google.maps.event.addListenerOnce(mapRef, 'idle', applyBounds);
+      // Also retry on next frame as safety
+      requestAnimationFrame(() => {
+        const d = mapRef.getDiv() as HTMLElement;
+        if (d && d.offsetWidth > 0 && d.offsetHeight > 0) {
+          google.maps.event.removeListener(listener);
+          applyBounds();
+        }
+      });
     }
-    const bounds = new google.maps.LatLngBounds();
-    points.forEach((p) => bounds.extend(p));
-    mapRef.fitBounds(bounds, { top: 60, bottom: 60, left: 60, right: 60 });
   }, [mapRef, isLoaded, origin?.lat, origin?.lng, destination?.lat, destination?.lng, JSON.stringify(markers), JSON.stringify(waypoints)]);
 
   // Auto-locate user on mount
