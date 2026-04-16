@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { GoogleMap, useJsApiLoader, Marker, DirectionsRenderer, Polyline } from '@react-google-maps/api';
 import { Loader2, LocateFixed } from 'lucide-react';
@@ -46,6 +46,7 @@ const MapView = ({
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [mapRef, setMapRef] = useState<google.maps.Map | null>(null);
   const [locating, setLocating] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_KEY,
@@ -54,23 +55,37 @@ const MapView = ({
 
   const isNativeApp = Capacitor.isNativePlatform();
 
+  const refreshNativeViewport = useCallback((map: google.maps.Map, delay = 0) => {
+    return window.setTimeout(() => {
+      const div = map.getDiv() as HTMLElement;
+      if (!div || div.offsetWidth === 0 || div.offsetHeight === 0) return;
+
+      google.maps.event.trigger(map, 'resize');
+
+      const centerPoint = center || origin || destination || userLocation || markers[0] || cairoCenter;
+      if (centerPoint) {
+        map.setCenter({ lat: centerPoint.lat, lng: centerPoint.lng });
+      }
+
+      window.requestAnimationFrame(() => {
+        try {
+          map.panBy(1, 0);
+          map.panBy(-1, 0);
+        } catch {
+          // no-op
+        }
+      });
+    }, delay);
+  }, [center, destination, isNativeApp, markers, origin, userLocation]);
+
   const onLoad = useCallback((map: google.maps.Map) => {
     setMapRef(map);
 
-    const triggerResize = (delay: number) => {
-      window.setTimeout(() => {
-        google.maps.event.trigger(map, 'resize');
-        const centerPoint = center || origin || destination || markers[0] || cairoCenter;
-        if (centerPoint) {
-          map.panTo({ lat: centerPoint.lat, lng: centerPoint.lng });
-        }
-      }, delay);
-    };
-
-    triggerResize(0);
-    triggerResize(250);
-    triggerResize(700);
-  }, [center, destination, markers, origin]);
+    if (!isNativeApp) return;
+    refreshNativeViewport(map, 0);
+    refreshNativeViewport(map, 250);
+    refreshNativeViewport(map, 700);
+  }, [isNativeApp, refreshNativeViewport]);
 
   // Auto-fit bounds to markers / origin / destination
   useEffect(() => {
@@ -123,7 +138,6 @@ const MapView = ({
     };
   }, [mapRef, isLoaded, origin?.lat, origin?.lng, destination?.lat, destination?.lng, JSON.stringify(markers), JSON.stringify(waypoints)]);
 
-  // Auto-locate user on mount
   useEffect(() => {
     if (!showUserLocation || userLocation) return;
     if (!navigator.geolocation) return;
@@ -134,7 +148,45 @@ const MapView = ({
       () => {},
       { enableHighAccuracy: true, timeout: 10000 }
     );
-  }, [showUserLocation]);
+  }, [showUserLocation, userLocation]);
+
+  useEffect(() => {
+    if (!isNativeApp || !mapRef) return;
+
+    const observedElement = wrapperRef.current;
+    const timeoutIds: number[] = [refreshNativeViewport(mapRef, 50), refreshNativeViewport(mapRef, 350)];
+
+    const handleWindowResize = () => {
+      timeoutIds.push(refreshNativeViewport(mapRef, 80));
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        timeoutIds.push(refreshNativeViewport(mapRef, 120));
+      }
+    };
+
+    const resizeObserver =
+      observedElement && typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => {
+            timeoutIds.push(refreshNativeViewport(mapRef, 60));
+          })
+        : null;
+
+    if (observedElement && resizeObserver) {
+      resizeObserver.observe(observedElement);
+    }
+
+    window.addEventListener('resize', handleWindowResize);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      timeoutIds.forEach((timeoutId) => window.clearTimeout(timeoutId));
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', handleWindowResize);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [isNativeApp, mapRef, refreshNativeViewport]);
 
   useEffect(() => {
     if (!isLoaded || !showDirections || !origin || !destination) {
@@ -222,7 +274,7 @@ const MapView = ({
   }
 
   return (
-    <div className={cn('relative overflow-hidden rounded-xl', className || 'h-full w-full')}>
+    <div ref={wrapperRef} className={cn('relative overflow-hidden rounded-xl', className || 'h-full w-full')}>
       <GoogleMap
         mapContainerStyle={containerStyle}
         {...(center ? { center, zoom } : { defaultCenter: cairoCenter, defaultZoom: zoom })}
@@ -240,9 +292,7 @@ const MapView = ({
         }}
         onTilesLoaded={() => {
           if (!isNativeApp || !mapRef) return;
-          window.setTimeout(() => {
-            google.maps.event.trigger(mapRef, 'resize');
-          }, 50);
+          refreshNativeViewport(mapRef, 30);
         }}
       >
         {markers.map((marker, i) => {
