@@ -65,7 +65,15 @@ export default function CommunityVerify() {
 
   const handleSubmit = async () => {
     if (!user || !communityId) return;
-    // Validate required
+    if (!authenticatedClient) {
+      toast({
+        title: lang === 'ar' ? 'انتهت الجلسة' : 'Session expired',
+        description: lang === 'ar' ? 'سجّل الدخول مرة أخرى ثم أعد المحاولة' : 'Please sign in again and try once more.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     for (const q of questions) {
       if (q.required) {
         const a = answers[q.id];
@@ -83,8 +91,7 @@ export default function CommunityVerify() {
 
     setSubmitting(true);
     try {
-      // Upsert membership (pending)
-      const { data: membership, error: mErr } = await supabase
+      const { data: membership, error: mErr } = await authenticatedClient
         .from('community_memberships')
         .upsert({
           user_id: user.id,
@@ -96,10 +103,12 @@ export default function CommunityVerify() {
         .single();
       if (mErr) throw mErr;
 
-      // Clear old answers (in case re-applying)
-      await supabase.from('community_verification_answers').delete().eq('membership_id', membership.id);
+      const { error: deleteErr } = await authenticatedClient
+        .from('community_verification_answers')
+        .delete()
+        .eq('membership_id', membership.id);
+      if (deleteErr) throw deleteErr;
 
-      // Insert new answers
       const rows: any[] = [];
       for (const q of questions) {
         const a = answers[q.id];
@@ -112,7 +121,7 @@ export default function CommunityVerify() {
         }
       }
       if (rows.length > 0) {
-        const { error: aErr } = await supabase.from('community_verification_answers').insert(rows);
+        const { error: aErr } = await authenticatedClient.from('community_verification_answers').insert(rows);
         if (aErr) throw aErr;
       }
 
