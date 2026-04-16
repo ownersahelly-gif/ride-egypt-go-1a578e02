@@ -29,7 +29,13 @@ export default function CommunityVerify() {
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const authenticatedClient = useMemo(() => {
+    if (!session?.access_token) return null;
+    return createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false, storageKey: 'community-verify-token' },
+      global: { headers: { Authorization: `Bearer ${session.access_token}` } },
+    });
+  }, [session?.access_token]);
     if (!user || !communityId) return;
     Promise.all([
       supabase.from('communities').select('*').eq('id', communityId).maybeSingle(),
