@@ -975,9 +975,9 @@ const Dashboard = () => {
 
   return (
     <div
-      className="h-[100dvh] flex flex-col overflow-hidden bg-surface transition-[padding] duration-200"
+      className="h-[100dvh] flex flex-col overflow-hidden bg-surface"
       style={{
-        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + max(4rem, var(--kb-inset, 0px)))",
+        paddingBottom: keyboardOpen ? "0px" : "calc(env(safe-area-inset-bottom, 0px) + 4rem)",
         paddingTop: "env(safe-area-inset-top, 0px)",
       }}
     >
