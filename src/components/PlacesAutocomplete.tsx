@@ -206,20 +206,13 @@ const PlacesAutocomplete = ({ placeholder, value, onSelect, iconColor = 'text-pr
           void ensureGoogleReady();
           if (predictions.length > 0) setShowDropdown(true);
           const target = e.currentTarget;
-          const scrollContainer = target.closest("[data-keyboard-scroll-container]") as HTMLElement | null;
           window.setTimeout(() => {
             try {
-              if (scrollContainer) {
-                const containerRect = scrollContainer.getBoundingClientRect();
-                const targetRect = target.getBoundingClientRect();
-                const nextTop = scrollContainer.scrollTop + (targetRect.top - containerRect.top) - 96;
-                scrollContainer.scrollTo({ top: Math.max(0, nextTop), behavior: "smooth" });
-              }
               target.scrollIntoView({ block: "center", behavior: "smooth" });
             } catch {
               target.scrollIntoView();
             }
-          }, 450);
+          }, 350);
         }}
       />
 
