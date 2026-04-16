@@ -19,7 +19,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { ChevronLeft, ChevronRight, User, Camera, Loader2, Shield, FileText, MapPin, Scale, ChevronRight as ChevronRightIcon, Trash2, AlertTriangle, HelpCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, User, Camera, Loader2, Shield, FileText, MapPin, Scale, ChevronRight as ChevronRightIcon, Trash2, AlertTriangle, HelpCircle, Building2 } from 'lucide-react';
 
 const Profile = () => {
   const { user, signOut } = useAuth();
@@ -173,8 +173,16 @@ const Profile = () => {
             {lang === 'ar' ? 'الدعم والقانوني' : 'Support & Legal'}
           </h3>
           <Link
-            to="/support"
+            to="/communities"
             className="flex items-center gap-3 px-6 py-3.5 hover:bg-muted/50 transition-colors"
+          >
+            <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span className="text-sm text-foreground flex-1">{lang === 'ar' ? 'المجتمعات' : 'Communities'}</span>
+            <ChevronRightIcon className="w-4 h-4 text-muted-foreground" />
+          </Link>
+          <Link
+            to="/support"
+            className="flex items-center gap-3 px-6 py-3.5 hover:bg-muted/50 transition-colors border-t border-border"
           >
             <HelpCircle className="w-4 h-4 text-muted-foreground shrink-0" />
             <span className="text-sm text-foreground flex-1">{lang === 'ar' ? 'الدعم والمساعدة' : 'Support & Help'}</span>

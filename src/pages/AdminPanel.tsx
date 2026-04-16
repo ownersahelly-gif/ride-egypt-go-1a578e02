@@ -21,8 +21,9 @@ import {
 } from 'lucide-react';
 import PackagePricing from '@/components/admin/PackagePricing';
 import LinkCombiner from '@/components/admin/LinkCombiner';
+import CommunitiesAdmin from '@/components/admin/CommunitiesAdmin';
 
-type AdminTab = 'routes' | 'drivers' | 'shuttles' | 'bookings' | 'analytics' | 'approvals' | 'settings' | 'carpool' | 'users' | 'route_requests' | 'packages' | 'content' | 'refunds' | 'earnings' | 'partners' | 'partner_routes' | 'partner_packages';
+type AdminTab = 'routes' | 'drivers' | 'shuttles' | 'bookings' | 'analytics' | 'approvals' | 'settings' | 'carpool' | 'communities' | 'users' | 'route_requests' | 'packages' | 'content' | 'refunds' | 'earnings' | 'partners' | 'partner_routes' | 'partner_packages';
 
 const AdminPanel = () => {
   const { user, signOut } = useAuth();
@@ -994,6 +995,7 @@ const AdminPanel = () => {
     { key: 'analytics', icon: BarChart3, label: lang === 'ar' ? 'التحليلات' : 'Analytics' },
     { key: 'approvals', icon: CheckCircle2, label: lang === 'ar' ? 'الموافقات' : 'Approvals' },
     { key: 'carpool', icon: Car, label: lang === 'ar' ? 'مشاركة الرحلات' : 'Carpool' },
+    { key: 'communities', icon: Building2, label: lang === 'ar' ? 'المجتمعات' : 'Communities' },
     { key: 'routes', icon: Route, label: lang === 'ar' ? 'المسارات' : 'Routes' },
     { key: 'packages', icon: Package, label: lang === 'ar' ? 'الباقات' : 'Packages' },
     { key: 'drivers', icon: Users, label: lang === 'ar' ? 'السائقين' : 'Drivers' },
@@ -2955,6 +2957,11 @@ const AdminPanel = () => {
               </div>
             )}
           </div>
+        )}
+
+        {/* Communities Tab */}
+        {tab === 'communities' && (
+          <CommunitiesAdmin lang={lang} />
         )}
 
         {/* Partner Packages Tab */}

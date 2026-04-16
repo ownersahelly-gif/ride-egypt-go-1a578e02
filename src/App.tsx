@@ -29,6 +29,8 @@ const CarpoolVerify = React.lazy(() => import("./pages/CarpoolVerify"));
 const CarpoolPost = React.lazy(() => import("./pages/CarpoolPost"));
 const CarpoolRoute = React.lazy(() => import("./pages/CarpoolRoute"));
 const CarpoolManage = React.lazy(() => import("./pages/CarpoolManage"));
+const Communities = React.lazy(() => import("./pages/Communities"));
+const CommunityVerify = React.lazy(() => import("./pages/CommunityVerify"));
 const Wallet = React.lazy(() => import("./pages/Wallet"));
 const DriverTestView = React.lazy(() => import("./pages/DriverTestView"));
 const PartnerDashboard = React.lazy(() => import("./pages/PartnerDashboard"));
@@ -146,6 +148,8 @@ const App = () => (
                 <Route path="/carpool/post" element={<ProtectedRoute><CarpoolPost /></ProtectedRoute>} />
                 <Route path="/carpool/route/:id" element={<ProtectedRoute><CarpoolRoute /></ProtectedRoute>} />
                 <Route path="/carpool/manage/:id" element={<ProtectedRoute><CarpoolManage /></ProtectedRoute>} />
+                <Route path="/communities" element={<ProtectedRoute><Communities /></ProtectedRoute>} />
+                <Route path="/communities/:id/verify" element={<ProtectedRoute><CommunityVerify /></ProtectedRoute>} />
                 <Route path="/legal" element={<Legal />} />
                 <Route path="/support" element={<Support />} />
                 <Route path="/partner" element={<ProtectedRoute><PartnerDashboard /></ProtectedRoute>} />

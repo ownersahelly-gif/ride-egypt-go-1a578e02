@@ -318,6 +318,7 @@ export type Database = {
         Row: {
           allow_car_swap: boolean
           available_seats: number
+          community_id: string | null
           created_at: string
           days_of_week: number[] | null
           departure_time: string
@@ -325,12 +326,15 @@ export type Database = {
           destination_lng: number
           destination_name: string
           fuel_share_amount: number | null
+          has_return: boolean
           id: string
           is_daily: boolean
+          mode: string
           notes: string | null
           origin_lat: number
           origin_lng: number
           origin_name: string
+          return_time: string | null
           share_fuel: boolean
           status: string
           updated_at: string
@@ -339,6 +343,7 @@ export type Database = {
         Insert: {
           allow_car_swap?: boolean
           available_seats?: number
+          community_id?: string | null
           created_at?: string
           days_of_week?: number[] | null
           departure_time: string
@@ -346,12 +351,15 @@ export type Database = {
           destination_lng: number
           destination_name: string
           fuel_share_amount?: number | null
+          has_return?: boolean
           id?: string
           is_daily?: boolean
+          mode?: string
           notes?: string | null
           origin_lat: number
           origin_lng: number
           origin_name: string
+          return_time?: string | null
           share_fuel?: boolean
           status?: string
           updated_at?: string
@@ -360,6 +368,7 @@ export type Database = {
         Update: {
           allow_car_swap?: boolean
           available_seats?: number
+          community_id?: string | null
           created_at?: string
           days_of_week?: number[] | null
           departure_time?: string
@@ -367,18 +376,29 @@ export type Database = {
           destination_lng?: number
           destination_name?: string
           fuel_share_amount?: number | null
+          has_return?: boolean
           id?: string
           is_daily?: boolean
+          mode?: string
           notes?: string | null
           origin_lat?: number
           origin_lng?: number
           origin_name?: string
+          return_time?: string | null
           share_fuel?: boolean
           status?: string
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "carpool_routes_community_id_fkey"
+            columns: ["community_id"]
+            isOneToOne: false
+            referencedRelation: "communities"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       carpool_verifications: {
         Row: {
@@ -457,6 +477,169 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      communities: {
+        Row: {
+          allowed_modes: string[]
+          created_at: string
+          description_ar: string | null
+          description_en: string | null
+          id: string
+          logo_url: string | null
+          name_ar: string
+          name_en: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          allowed_modes?: string[]
+          created_at?: string
+          description_ar?: string | null
+          description_en?: string | null
+          id?: string
+          logo_url?: string | null
+          name_ar: string
+          name_en: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          allowed_modes?: string[]
+          created_at?: string
+          description_ar?: string | null
+          description_en?: string | null
+          id?: string
+          logo_url?: string | null
+          name_ar?: string
+          name_en?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      community_memberships: {
+        Row: {
+          admin_notes: string | null
+          community_id: string
+          created_at: string
+          id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          admin_notes?: string | null
+          community_id: string
+          created_at?: string
+          id?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          admin_notes?: string | null
+          community_id?: string
+          created_at?: string
+          id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "community_memberships_community_id_fkey"
+            columns: ["community_id"]
+            isOneToOne: false
+            referencedRelation: "communities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      community_verification_answers: {
+        Row: {
+          answer_file_url: string | null
+          answer_text: string | null
+          created_at: string
+          id: string
+          membership_id: string
+          question_id: string
+        }
+        Insert: {
+          answer_file_url?: string | null
+          answer_text?: string | null
+          created_at?: string
+          id?: string
+          membership_id: string
+          question_id: string
+        }
+        Update: {
+          answer_file_url?: string | null
+          answer_text?: string | null
+          created_at?: string
+          id?: string
+          membership_id?: string
+          question_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "community_verification_answers_membership_id_fkey"
+            columns: ["membership_id"]
+            isOneToOne: false
+            referencedRelation: "community_memberships"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "community_verification_answers_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "community_verification_questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      community_verification_questions: {
+        Row: {
+          community_id: string
+          created_at: string
+          field_type: string
+          id: string
+          label_ar: string
+          label_en: string
+          options: Json | null
+          required: boolean
+          sort_order: number
+        }
+        Insert: {
+          community_id: string
+          created_at?: string
+          field_type?: string
+          id?: string
+          label_ar: string
+          label_en: string
+          options?: Json | null
+          required?: boolean
+          sort_order?: number
+        }
+        Update: {
+          community_id?: string
+          created_at?: string
+          field_type?: string
+          id?: string
+          label_ar?: string
+          label_en?: string
+          options?: Json | null
+          required?: boolean
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "community_verification_questions_community_id_fkey"
+            columns: ["community_id"]
+            isOneToOne: false
+            referencedRelation: "communities"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       device_tokens: {
         Row: {
@@ -1695,6 +1878,14 @@ export type Database = {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      user_in_community: {
+        Args: { _community: string; _user: string }
+        Returns: boolean
+      }
+      users_share_community: {
+        Args: { _user_a: string; _user_b: string }
         Returns: boolean
       }
     }
