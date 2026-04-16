@@ -58,6 +58,7 @@ const MapView = ({
   // Auto-fit bounds to markers / origin / destination
   useEffect(() => {
     if (!mapRef || !isLoaded) return;
+
     const points: { lat: number; lng: number }[] = [];
     if (origin) points.push(origin);
     if (destination) points.push(destination);
@@ -67,31 +68,42 @@ const MapView = ({
     if (points.length === 0) return;
 
     const applyBounds = () => {
+      const div = mapRef.getDiv() as HTMLElement;
+      if (!div || div.offsetWidth === 0 || div.offsetHeight === 0) {
+        return false;
+      }
+
       if (points.length === 1) {
         mapRef.panTo(points[0]);
         mapRef.setZoom(15);
-        return;
+        return true;
       }
+
       const bounds = new google.maps.LatLngBounds();
       points.forEach((p) => bounds.extend(p));
       mapRef.fitBounds(bounds, { top: 80, bottom: 80, left: 60, right: 60 });
+      return true;
     };
 
-    // Wait for the map div to have real dimensions before fitting
-    const div = mapRef.getDiv() as HTMLElement;
-    if (div && div.offsetWidth > 0 && div.offsetHeight > 0) {
+    const fitWithRetry = (delay: number) => {
+      const timeoutId = window.setTimeout(() => {
+        if (!mapRef) return;
+        google.maps.event.trigger(mapRef, 'resize');
+        applyBounds();
+      }, delay);
+      return timeoutId;
+    };
+
+    const timeouts = [fitWithRetry(0), fitWithRetry(150), fitWithRetry(400), fitWithRetry(900)];
+    const idleListener = google.maps.event.addListenerOnce(mapRef, 'idle', () => {
+      google.maps.event.trigger(mapRef, 'resize');
       applyBounds();
-    } else {
-      const listener = google.maps.event.addListenerOnce(mapRef, 'idle', applyBounds);
-      // Also retry on next frame as safety
-      requestAnimationFrame(() => {
-        const d = mapRef.getDiv() as HTMLElement;
-        if (d && d.offsetWidth > 0 && d.offsetHeight > 0) {
-          google.maps.event.removeListener(listener);
-          applyBounds();
-        }
-      });
-    }
+    });
+
+    return () => {
+      timeouts.forEach((timeoutId) => window.clearTimeout(timeoutId));
+      google.maps.event.removeListener(idleListener);
+    };
   }, [mapRef, isLoaded, origin?.lat, origin?.lng, destination?.lat, destination?.lng, JSON.stringify(markers), JSON.stringify(waypoints)]);
 
   // Auto-locate user on mount

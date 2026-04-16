@@ -101,9 +101,7 @@ const Dashboard = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [drivingDistanceKm, setDrivingDistanceKm] = useState<number | null>(null);
-  const [mapLoaded, setMapLoaded] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
-  const mapContainerRef = useRef<HTMLDivElement>(null);
 
   // Uber/Careem pattern: hide map when keyboard is open, OR when exactly one of
   // pickup/dropoff is filled (so user naturally completes the second field).
@@ -111,24 +109,6 @@ const Dashboard = () => {
   const mapVisible =
     step !== "search" ||
     (!keyboardOpen && ((!!pickup && !!dropoff) || (!pickup && !dropoff)));
-
-  // Only load MapView when the map area is first shown on screen
-  useEffect(() => {
-    if (mapLoaded || !mapVisible) return;
-    const el = mapContainerRef.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setMapLoaded(true);
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.1 },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [mapLoaded, mapVisible]);
 
   // Track keyboard open/close (Capacitor on native, visualViewport on web)
   useEffect(() => {
@@ -1061,56 +1041,44 @@ const Dashboard = () => {
         </Link>
       )}
 
-      <div
-        ref={mapContainerRef}
-        className={`${mapVisible ? "flex-1 min-h-0" : "hidden"} relative bg-muted`}
-      >
-        {mapLoaded ? (
-          <Suspense
-            fallback={
-              <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-                <div className="flex items-center gap-2 text-sm">
-                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                  <span>{lang === "ar" ? "جاري تجهيز الخريطة..." : "Preparing map..."}</span>
-                </div>
+      <div className={`${mapVisible ? "flex-1 min-h-0" : "hidden"} relative bg-muted`}>
+        <Suspense
+          fallback={
+            <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+              <div className="flex items-center gap-2 text-sm">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span>{lang === "ar" ? "جاري تجهيز الخريطة..." : "Preparing map..."}</span>
               </div>
-            }
-          >
-            <MapView
-              className="h-full w-full rounded-none"
-              markers={mapMarkers}
-              origin={
-                step === "details" && selectedRide?.routes
-                  ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng }
-                  : pickup && dropoff
-                    ? pickup
-                    : undefined
-              }
-              destination={
-                step === "details" && selectedRide?.routes
-                  ? { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng }
-                  : pickup && dropoff
-                    ? dropoff
-                    : undefined
-              }
-              waypoints={
-                step === "details" && selectedRide?.routes
-                  ? routeStops.map((s: any) => ({ lat: s.lat, lng: s.lng }))
-                  : []
-              }
-              showDirections={step === "details" ? !!selectedRide?.routes : !!pickup && !!dropoff}
-              zoom={12}
-              showUserLocation
-            />
-          </Suspense>
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-            <div className="flex items-center gap-2 text-sm">
-              <Loader2 className="h-4 w-4 animate-spin text-primary" />
-              <span>{lang === "ar" ? "جاري تجهيز الخريطة..." : "Preparing map..."}</span>
             </div>
-          </div>
-        )}
+          }
+        >
+          <MapView
+            className="h-full w-full rounded-none"
+            markers={mapMarkers}
+            origin={
+              step === "details" && selectedRide?.routes
+                ? { lat: selectedRide.routes.origin_lat, lng: selectedRide.routes.origin_lng }
+                : pickup && dropoff
+                  ? pickup
+                  : undefined
+            }
+            destination={
+              step === "details" && selectedRide?.routes
+                ? { lat: selectedRide.routes.destination_lat, lng: selectedRide.routes.destination_lng }
+                : pickup && dropoff
+                  ? dropoff
+                  : undefined
+            }
+            waypoints={
+              step === "details" && selectedRide?.routes
+                ? routeStops.map((s: any) => ({ lat: s.lat, lng: s.lng }))
+                : []
+            }
+            showDirections={step === "details" ? !!selectedRide?.routes : !!pickup && !!dropoff}
+            zoom={12}
+            showUserLocation
+          />
+        </Suspense>
       </div>
 
       <div
