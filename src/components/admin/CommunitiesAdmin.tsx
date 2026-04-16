@@ -83,28 +83,32 @@ export default function CommunitiesAdmin({ lang }: { lang: 'en' | 'ar' }) {
     status: 'active',
   });
 
-  useEffect(() => {
-    if (session?.access_token) fetchAll();
+  const adminClient = useMemo<SupabaseClient | null>(() => {
+    if (!session?.access_token) return null;
+    return createClient(
+      import.meta.env.VITE_SUPABASE_URL,
+      import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      {
+        auth: { persistSession: false, autoRefreshToken: false, storageKey: 'admin-client-token' },
+        global: { headers: { Authorization: `Bearer ${session.access_token}` } },
+      }
+    );
   }, [session?.access_token]);
 
+  useEffect(() => {
+    if (adminClient) fetchAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminClient]);
+
   const getAdminClient = () => {
-    if (!session?.access_token) {
+    if (!adminClient) {
       toast({
         title: lang === 'ar' ? 'انتهت الجلسة' : 'Session expired',
         description: lang === 'ar' ? 'سجّل الدخول مرة أخرى ثم أعد المحاولة' : 'Please sign in again and try once more.',
         variant: 'destructive',
       });
-      return null;
     }
-
-    return createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      },
-    });
+    return adminClient;
   };
 
   const fetchAll = async () => {
