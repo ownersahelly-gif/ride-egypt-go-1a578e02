@@ -331,19 +331,96 @@ const CarpoolPost = () => {
               <Switch checked={isDaily} onCheckedChange={setIsDaily} />
             </div>
             {isDaily && (
-              <div className="flex flex-wrap gap-2">
-                {dayLabels.map((d, i) => (
-                  <button
-                    key={i}
-                    onClick={() => toggleDay(i)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                      daysOfWeek.includes(i) ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-                    }`}
-                  >
-                    {d}
-                  </button>
-                ))}
-              </div>
+              <>
+                <div>
+                  <Label className="text-xs text-muted-foreground">
+                    {lang === 'ar' ? 'اختر الأيام' : 'Select days'}
+                  </Label>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {dayLabels.map((d, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => toggleDay(i)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                          daysOfWeek.includes(i) ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                        }`}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {daysOfWeek.length > 0 && (
+                  <div className="flex items-center justify-between pt-1">
+                    <div>
+                      <p className="text-sm font-medium">
+                        {lang === 'ar' ? 'وقت مختلف لكل يوم' : 'Different time per day'}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {lang === 'ar' ? 'مثلاً الأحد ٨ مساءً والإثنين ٩ مساءً' : 'e.g. Sunday 8 PM, Monday 9 PM'}
+                      </p>
+                    </div>
+                    <Switch checked={customizePerDay} onCheckedChange={setCustomizePerDay} />
+                  </div>
+                )}
+
+                {customizePerDay && daysOfWeek.length > 0 && (
+                  <div className="space-y-2 rounded-lg border border-border p-3 bg-muted/30">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold">
+                        {lang === 'ar' ? 'الأوقات لكل يوم' : 'Times per day'}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          const next: Record<number, { departure?: string; return?: string }> = {};
+                          daysOfWeek.forEach(d => {
+                            next[d] = { departure: departureTime, return: hasReturn ? returnTime : undefined };
+                          });
+                          setDayOverrides(next);
+                          toast({ title: lang === 'ar' ? 'تم تطبيق الوقت الافتراضي على كل الأيام' : 'Default time applied to all days' });
+                        }}
+                      >
+                        {lang === 'ar' ? 'تطبيق على الكل' : 'Apply to all'}
+                      </Button>
+                    </div>
+                    {[...daysOfWeek].sort((a, b) => a - b).map(d => {
+                      const ov = dayOverrides[d] || {};
+                      return (
+                        <div key={d} className="grid grid-cols-[60px_1fr_1fr] gap-2 items-center">
+                          <span className="text-xs font-medium">{dayLabels[d]}</span>
+                          <Input
+                            type="time"
+                            value={ov.departure ?? departureTime}
+                            onChange={e => setDayOverrides(prev => ({ ...prev, [d]: { ...prev[d], departure: e.target.value } }))}
+                            className="h-9 text-sm"
+                          />
+                          {hasReturn ? (
+                            <Input
+                              type="time"
+                              value={ov.return ?? returnTime}
+                              onChange={e => setDayOverrides(prev => ({ ...prev, [d]: { ...prev[d], return: e.target.value } }))}
+                              className="h-9 text-sm"
+                            />
+                          ) : (
+                            <span className="text-xs text-muted-foreground text-center">—</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                    <div className="grid grid-cols-[60px_1fr_1fr] gap-2 text-[10px] text-muted-foreground">
+                      <span></span>
+                      <span className="text-center">{lang === 'ar' ? 'ذهاب' : 'Depart'}</span>
+                      <span className="text-center">{hasReturn ? (lang === 'ar' ? 'عودة' : 'Return') : ''}</span>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
