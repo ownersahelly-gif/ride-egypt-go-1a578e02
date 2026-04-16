@@ -101,18 +101,26 @@ const Dashboard = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [drivingDistanceKm, setDrivingDistanceKm] = useState<number | null>(null);
-  const [showMap, setShowMap] = useState(false);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
-  // Only load MapView when the map area is visible on screen
+  // Uber/Careem pattern: hide map when keyboard is open, OR when exactly one of
+  // pickup/dropoff is filled (so user naturally completes the second field).
+  // Show map on initial state (both empty) and once both are selected.
+  const mapVisible =
+    step !== "search" ||
+    (!keyboardOpen && ((!!pickup && !!dropoff) || (!pickup && !dropoff)));
+
+  // Only load MapView when the map area is first shown on screen
   useEffect(() => {
-    if (showMap) return;
+    if (mapLoaded || !mapVisible) return;
     const el = mapContainerRef.current;
     if (!el) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setShowMap(true);
+          setMapLoaded(true);
           observer.disconnect();
         }
       },
@@ -120,7 +128,46 @@ const Dashboard = () => {
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [showMap]);
+  }, [mapLoaded, mapVisible]);
+
+  // Track keyboard open/close (Capacitor on native, visualViewport on web)
+  useEffect(() => {
+    let cleanupNative: (() => void) | undefined;
+    let usingNative = false;
+
+    (async () => {
+      try {
+        const { Capacitor } = await import("@capacitor/core");
+        if (Capacitor.isNativePlatform()) {
+          const { Keyboard } = await import("@capacitor/keyboard");
+          usingNative = true;
+          const showSub = await Keyboard.addListener("keyboardWillShow", () => setKeyboardOpen(true));
+          const hideSub = await Keyboard.addListener("keyboardWillHide", () => setKeyboardOpen(false));
+          cleanupNative = () => {
+            showSub.remove();
+            hideSub.remove();
+          };
+        }
+      } catch {
+        // ignore — fallback below
+      }
+    })();
+
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    const onVV = () => {
+      if (usingNative || !vv) return;
+      const diff = window.innerHeight - vv.height - vv.offsetTop;
+      setKeyboardOpen(diff > 80);
+    };
+    vv?.addEventListener("resize", onVV);
+    vv?.addEventListener("scroll", onVV);
+
+    return () => {
+      cleanupNative?.();
+      vv?.removeEventListener("resize", onVV);
+      vv?.removeEventListener("scroll", onVV);
+    };
+  }, []);
 
   // Compute real driving distance between pickup & dropoff
   useEffect(() => {
