@@ -67,24 +67,30 @@ const MapView = ({
         map.setCenter({ lat: centerPoint.lat, lng: centerPoint.lng });
       }
 
-      window.requestAnimationFrame(() => {
-        try {
+      // Mimic the user tapping the locate button: a real zoom + pan forces
+      // WKWebView to repaint the tile layer that otherwise stays gray.
+      const currentZoom = map.getZoom() ?? zoom;
+      try {
+        map.setZoom(currentZoom + 1);
+        window.requestAnimationFrame(() => {
+          map.setZoom(currentZoom);
           map.panBy(1, 0);
           map.panBy(-1, 0);
-        } catch {
-          // no-op
-        }
-      });
+        });
+      } catch {
+        // no-op
+      }
     }, delay);
-  }, [center, destination, isNativeApp, markers, origin, userLocation]);
+  }, [center, destination, markers, origin, userLocation, zoom]);
 
   const onLoad = useCallback((map: google.maps.Map) => {
     setMapRef(map);
 
     if (!isNativeApp) return;
     refreshNativeViewport(map, 0);
-    refreshNativeViewport(map, 250);
-    refreshNativeViewport(map, 700);
+    refreshNativeViewport(map, 200);
+    refreshNativeViewport(map, 600);
+    refreshNativeViewport(map, 1400);
   }, [isNativeApp, refreshNativeViewport]);
 
   // Auto-fit bounds to markers / origin / destination
