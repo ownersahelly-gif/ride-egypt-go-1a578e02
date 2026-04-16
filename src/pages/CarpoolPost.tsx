@@ -20,9 +20,15 @@ import BottomNav from '@/components/BottomNav';
 
 const MODE_LABELS: Record<string, { en: string; ar: string }> = {
   car_sharing: { en: 'Car-sharing only (no money)', ar: 'مشاركة فقط (بدون مال)' },
-  fuel_share: { en: 'Share fuel cost', ar: 'مشاركة وقود' },
+  fuel_share: { en: 'Paid ride', ar: 'رحلة مدفوعة' },
   paid: { en: 'Paid ride', ar: 'رحلة مدفوعة' },
 };
+
+const normalizeModes = (modes: string[] = []) => Array.from(new Set(
+  modes
+    .map((value) => value === 'fuel_share' ? 'paid' : value)
+    .filter((value): value is 'car_sharing' | 'paid' => value === 'car_sharing' || value === 'paid')
+));
 
 const CarpoolPost = () => {
   const { user } = useAuth();
@@ -58,7 +64,13 @@ const CarpoolPost = () => {
       .eq('user_id', user.id)
       .eq('status', 'approved')
       .then(({ data }) => {
-        const list = (data || []).map((m: any) => m.communities).filter(Boolean);
+        const list = (data || []).map((m: any) => {
+          if (!m.communities) return null;
+          return {
+            ...m.communities,
+            allowed_modes: normalizeModes(m.communities.allowed_modes || []),
+          };
+        }).filter(Boolean);
         setMyCommunities(list);
         if (list.length === 1) {
           setCommunityId(list[0].id);
@@ -70,11 +82,11 @@ const CarpoolPost = () => {
   }, [user]);
 
   const selectedCommunity = myCommunities.find(c => c.id === communityId);
-  const allowedModes: string[] = selectedCommunity?.allowed_modes || [];
+  const allowedModes: string[] = normalizeModes(selectedCommunity?.allowed_modes || []);
 
   // Auto-sync shareFuel switch with mode for backwards compat
   useEffect(() => {
-    setShareFuel(mode === 'fuel_share' || mode === 'paid');
+    setShareFuel(mode === 'paid');
   }, [mode]);
 
   const dayLabels = lang === 'ar'
@@ -118,7 +130,7 @@ const CarpoolPost = () => {
       const { error } = await supabase.from('carpool_routes').insert({
         user_id: user.id,
         community_id: communityId,
-        mode,
+        mode: mode === 'fuel_share' ? 'paid' : mode,
         origin_name: origin.name,
         origin_lat: origin.lat,
         origin_lng: origin.lng,
@@ -130,8 +142,8 @@ const CarpoolPost = () => {
         return_time: hasReturn ? returnTime + ':00' : null,
         is_daily: isDaily,
         days_of_week: isDaily ? daysOfWeek : [],
-        share_fuel: mode !== 'car_sharing',
-        fuel_share_amount: mode !== 'car_sharing' ? parseFloat(fuelAmount) || 0 : 0,
+        share_fuel: mode === 'paid',
+        fuel_share_amount: mode === 'paid' ? parseFloat(fuelAmount) || 0 : 0,
         allow_car_swap: allowSwap,
         available_seats: seats,
         notes: notes || null,
