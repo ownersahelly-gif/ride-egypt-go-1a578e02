@@ -47,6 +47,7 @@ const MapView = ({
   const [mapRef, setMapRef] = useState<google.maps.Map | null>(null);
   const [locating, setLocating] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const initialPaintRef = useRef(false);
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_KEY,
@@ -54,44 +55,50 @@ const MapView = ({
   });
 
   const isNativeApp = Capacitor.isNativePlatform();
+  const fallbackCenter = center || origin || destination || userLocation || markers[0] || cairoCenter;
 
-  const refreshNativeViewport = useCallback((map: google.maps.Map, delay = 0) => {
+  const refreshViewport = useCallback((map: google.maps.Map, delay = 0, forcePaint = false) => {
     return window.setTimeout(() => {
       const div = map.getDiv() as HTMLElement;
       if (!div || div.offsetWidth === 0 || div.offsetHeight === 0) return;
 
       google.maps.event.trigger(map, 'resize');
 
-      const centerPoint = center || origin || destination || userLocation || markers[0] || cairoCenter;
-      if (centerPoint) {
-        map.setCenter({ lat: centerPoint.lat, lng: centerPoint.lng });
+      if (fallbackCenter) {
+        map.setCenter({ lat: fallbackCenter.lat, lng: fallbackCenter.lng });
       }
 
-      // Mimic the user tapping the locate button: a real zoom + pan forces
-      // WKWebView to repaint the tile layer that otherwise stays gray.
-      const currentZoom = map.getZoom() ?? zoom;
-      try {
-        map.setZoom(currentZoom + 1);
-        window.requestAnimationFrame(() => {
-          map.setZoom(currentZoom);
-          map.panBy(1, 0);
-          map.panBy(-1, 0);
-        });
-      } catch {
-        // no-op
+      if (forcePaint || isNativeApp) {
+        // Force the same kind of repaint the user triggers manually by tapping
+        // the locate button, which fixes first-load blank tiles on web/iOS.
+        const currentZoom = map.getZoom() ?? zoom;
+        try {
+          map.setZoom(currentZoom + 1);
+          window.requestAnimationFrame(() => {
+            map.setZoom(currentZoom);
+            map.panBy(1, 0);
+            map.panBy(-1, 0);
+          });
+        } catch {
+          // no-op
+        }
       }
     }, delay);
-  }, [center, destination, markers, origin, userLocation, zoom]);
+  }, [fallbackCenter, isNativeApp, zoom]);
 
   const onLoad = useCallback((map: google.maps.Map) => {
     setMapRef(map);
+    initialPaintRef.current = false;
 
-    if (!isNativeApp) return;
-    refreshNativeViewport(map, 0);
-    refreshNativeViewport(map, 200);
-    refreshNativeViewport(map, 600);
-    refreshNativeViewport(map, 1400);
-  }, [isNativeApp, refreshNativeViewport]);
+    refreshViewport(map, 0, true);
+    refreshViewport(map, 180, true);
+    refreshViewport(map, 500, true);
+    refreshViewport(map, 1100, true);
+
+    if (isNativeApp) {
+      refreshViewport(map, 1600, true);
+    }
+  }, [isNativeApp, refreshViewport]);
 
   // Auto-fit bounds to markers / origin / destination
   useEffect(() => {
@@ -160,22 +167,22 @@ const MapView = ({
     if (!isNativeApp || !mapRef) return;
 
     const observedElement = wrapperRef.current;
-    const timeoutIds: number[] = [refreshNativeViewport(mapRef, 50), refreshNativeViewport(mapRef, 350)];
+    const timeoutIds: number[] = [refreshViewport(mapRef, 50, true), refreshViewport(mapRef, 350, true)];
 
     const handleWindowResize = () => {
-      timeoutIds.push(refreshNativeViewport(mapRef, 80));
+      timeoutIds.push(refreshViewport(mapRef, 80, true));
     };
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        timeoutIds.push(refreshNativeViewport(mapRef, 120));
+        timeoutIds.push(refreshViewport(mapRef, 120, true));
       }
     };
 
     const resizeObserver =
       observedElement && typeof ResizeObserver !== 'undefined'
         ? new ResizeObserver(() => {
-            timeoutIds.push(refreshNativeViewport(mapRef, 60));
+            timeoutIds.push(refreshViewport(mapRef, 60, true));
           })
         : null;
 
@@ -192,7 +199,7 @@ const MapView = ({
       window.removeEventListener('resize', handleWindowResize);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [isNativeApp, mapRef, refreshNativeViewport]);
+  }, [mapRef, refreshViewport]);
 
   useEffect(() => {
     if (!isLoaded || !showDirections || !origin || !destination) {
@@ -297,8 +304,9 @@ const MapView = ({
           backgroundColor: '#f3f4f6',
         }}
         onTilesLoaded={() => {
-          if (!isNativeApp || !mapRef) return;
-          refreshNativeViewport(mapRef, 30);
+          if (!mapRef || initialPaintRef.current) return;
+          initialPaintRef.current = true;
+          refreshViewport(mapRef, 30, true);
         }}
       >
         {markers.map((marker, i) => {
