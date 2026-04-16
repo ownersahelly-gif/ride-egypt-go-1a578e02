@@ -55,7 +55,11 @@ const MapView = ({
   });
 
   const isNativeApp = Capacitor.isNativePlatform();
-  const fallbackCenter = center || origin || destination || userLocation || markers[0] || cairoCenter;
+  // Stable ref so the repaint helper doesn't change identity on every render
+  // (which previously caused the bounds-fit effect to fire continuously and
+  // made the map jitter after both points were chosen).
+  const fallbackCenterRef = useRef<{ lat: number; lng: number }>(cairoCenter);
+  fallbackCenterRef.current = center || origin || destination || userLocation || markers[0] || cairoCenter;
 
   const refreshViewport = useCallback((map: google.maps.Map, delay = 0, forcePaint = false) => {
     return window.setTimeout(() => {
@@ -64,11 +68,11 @@ const MapView = ({
 
       google.maps.event.trigger(map, 'resize');
 
-      if (fallbackCenter) {
-        map.setCenter({ lat: fallbackCenter.lat, lng: fallbackCenter.lng });
-      }
-
       if (forcePaint || isNativeApp) {
+        const fc = fallbackCenterRef.current;
+        if (fc) {
+          map.setCenter({ lat: fc.lat, lng: fc.lng });
+        }
         // Force the same kind of repaint the user triggers manually by tapping
         // the locate button, which fixes first-load blank tiles on web/iOS.
         const currentZoom = map.getZoom() ?? zoom;
@@ -84,7 +88,7 @@ const MapView = ({
         }
       }
     }, delay);
-  }, [fallbackCenter, isNativeApp, zoom]);
+  }, [isNativeApp, zoom]);
 
   const onLoad = useCallback((map: google.maps.Map) => {
     setMapRef(map);
@@ -167,22 +171,22 @@ const MapView = ({
     if (!isNativeApp || !mapRef) return;
 
     const observedElement = wrapperRef.current;
-    const timeoutIds: number[] = [refreshViewport(mapRef, 50, true), refreshViewport(mapRef, 350, true)];
+    const timeoutIds: number[] = [];
 
     const handleWindowResize = () => {
-      timeoutIds.push(refreshViewport(mapRef, 80, true));
+      timeoutIds.push(refreshViewport(mapRef, 80, false));
     };
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        timeoutIds.push(refreshViewport(mapRef, 120, true));
+        timeoutIds.push(refreshViewport(mapRef, 120, false));
       }
     };
 
     const resizeObserver =
       observedElement && typeof ResizeObserver !== 'undefined'
         ? new ResizeObserver(() => {
-            timeoutIds.push(refreshViewport(mapRef, 60, true));
+            timeoutIds.push(refreshViewport(mapRef, 60, false));
           })
         : null;
 
