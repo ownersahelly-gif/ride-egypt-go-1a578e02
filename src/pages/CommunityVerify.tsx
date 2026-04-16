@@ -16,7 +16,7 @@ import { ChevronLeft, ChevronRight, Upload, Shield, Building2, CheckCircle2 } fr
 
 export default function CommunityVerify() {
   const { id: communityId } = useParams();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { lang } = useLanguage();
   const navigate = useNavigate();
   const { toast } = useToast();
