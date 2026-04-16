@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -52,11 +54,17 @@ type Membership = {
 
 const ALL_MODES = [
   { key: 'car_sharing', en: 'Car-sharing only', ar: 'مشاركة فقط' },
-  { key: 'fuel_share', en: 'Fuel share', ar: 'مشاركة وقود' },
   { key: 'paid', en: 'Paid', ar: 'مدفوع' },
 ];
 
+const normalizeModes = (modes: string[] = []) => Array.from(new Set(
+  modes
+    .map((mode) => mode === 'fuel_share' ? 'paid' : mode)
+    .filter((mode): mode is 'car_sharing' | 'paid' => mode === 'car_sharing' || mode === 'paid')
+));
+
 export default function CommunitiesAdmin({ lang }: { lang: 'en' | 'ar' }) {
+  const { session } = useAuth();
   const { toast } = useToast();
   const [communities, setCommunities] = useState<Community[]>([]);
   const [questions, setQuestions] = useState<Record<string, Question[]>>({});
@@ -71,20 +79,51 @@ export default function CommunitiesAdmin({ lang }: { lang: 'en' | 'ar' }) {
   // Community form state
   const [form, setForm] = useState({
     name_en: '', name_ar: '', description_en: '', description_ar: '',
-    logo_url: '', allowed_modes: ['car_sharing', 'fuel_share', 'paid'] as string[],
+    logo_url: '', allowed_modes: ['car_sharing', 'paid'] as string[],
     status: 'active',
   });
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => {
+    if (session?.access_token) fetchAll();
+  }, [session?.access_token]);
+
+  const getAdminClient = () => {
+    if (!session?.access_token) {
+      toast({
+        title: lang === 'ar' ? 'انتهت الجلسة' : 'Session expired',
+        description: lang === 'ar' ? 'سجّل الدخول مرة أخرى ثم أعد المحاولة' : 'Please sign in again and try once more.',
+        variant: 'destructive',
+      });
+      return null;
+    }
+
+    return createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      },
+    });
+  };
 
   const fetchAll = async () => {
     setLoading(true);
+    const adminClient = getAdminClient();
+    if (!adminClient) {
+      setLoading(false);
+      return;
+    }
+
     const [cRes, qRes, mRes] = await Promise.all([
-      supabase.from('communities').select('*').order('created_at', { ascending: false }),
-      supabase.from('community_verification_questions').select('*').order('sort_order'),
-      supabase.from('community_memberships').select('*').order('created_at', { ascending: false }),
+      adminClient.from('communities').select('*').order('created_at', { ascending: false }),
+      adminClient.from('community_verification_questions').select('*').order('sort_order'),
+      adminClient.from('community_memberships').select('*').order('created_at', { ascending: false }),
     ]);
-    const cs = (cRes.data || []) as Community[];
+    const cs = ((cRes.data || []) as Community[]).map((community) => ({
+      ...community,
+      allowed_modes: normalizeModes(community.allowed_modes),
+    }));
     setCommunities(cs);
     const qByC: Record<string, Question[]> = {};
     (qRes.data || []).forEach((q: any) => {
@@ -98,7 +137,7 @@ export default function CommunitiesAdmin({ lang }: { lang: 'en' | 'ar' }) {
     // Fetch profiles for memberships
     const userIds = [...new Set(ms.map(m => m.user_id))];
     if (userIds.length > 0) {
-      const { data: profs } = await supabase.from('profiles').select('user_id, full_name, phone').in('user_id', userIds);
+      const { data: profs } = await adminClient.from('profiles').select('user_id, full_name, phone').in('user_id', userIds);
       const pMap: Record<string, any> = {};
       (profs || []).forEach((p: any) => { pMap[p.user_id] = p; });
       setProfiles(pMap);
@@ -110,7 +149,7 @@ export default function CommunitiesAdmin({ lang }: { lang: 'en' | 'ar' }) {
     setEditing(null);
     setForm({
       name_en: '', name_ar: '', description_en: '', description_ar: '',
-      logo_url: '', allowed_modes: ['car_sharing', 'fuel_share', 'paid'],
+      logo_url: '', allowed_modes: ['car_sharing', 'paid'],
       status: 'active',
     });
     setShowForm(true);
@@ -122,7 +161,7 @@ export default function CommunitiesAdmin({ lang }: { lang: 'en' | 'ar' }) {
       name_en: c.name_en, name_ar: c.name_ar,
       description_en: c.description_en || '', description_ar: c.description_ar || '',
       logo_url: c.logo_url || '',
-      allowed_modes: c.allowed_modes || [],
+      allowed_modes: normalizeModes(c.allowed_modes || []),
       status: c.status,
     });
     setShowForm(true);
@@ -142,12 +181,14 @@ export default function CommunitiesAdmin({ lang }: { lang: 'en' | 'ar' }) {
       description_en: form.description_en || null,
       description_ar: form.description_ar || null,
       logo_url: form.logo_url || null,
-      allowed_modes: form.allowed_modes,
+      allowed_modes: normalizeModes(form.allowed_modes),
       status: form.status,
     };
+    const adminClient = getAdminClient();
+    if (!adminClient) return;
     const { error } = editing
-      ? await supabase.from('communities').update(payload).eq('id', editing.id)
-      : await supabase.from('communities').insert(payload);
+      ? await adminClient.from('communities').update(payload).eq('id', editing.id)
+      : await adminClient.from('communities').insert(payload);
     if (error) { toast({ title: error.message, variant: 'destructive' }); return; }
     toast({ title: lang === 'ar' ? 'تم الحفظ' : 'Saved' });
     setShowForm(false);
@@ -156,7 +197,9 @@ export default function CommunitiesAdmin({ lang }: { lang: 'en' | 'ar' }) {
 
   const deleteCommunity = async (id: string) => {
     if (!confirm(lang === 'ar' ? 'حذف هذا المجتمع؟' : 'Delete this community?')) return;
-    const { error } = await supabase.from('communities').delete().eq('id', id);
+    const adminClient = getAdminClient();
+    if (!adminClient) return;
+    const { error } = await adminClient.from('communities').delete().eq('id', id);
     if (error) { toast({ title: error.message, variant: 'destructive' }); return; }
     toast({ title: lang === 'ar' ? 'تم الحذف' : 'Deleted' });
     fetchAll();
@@ -173,7 +216,9 @@ export default function CommunitiesAdmin({ lang }: { lang: 'en' | 'ar' }) {
 
   const addQuestion = async (communityId: string) => {
     const existing = questions[communityId] || [];
-    const { error } = await supabase.from('community_verification_questions').insert({
+    const adminClient = getAdminClient();
+    if (!adminClient) return;
+    const { error } = await adminClient.from('community_verification_questions').insert({
       community_id: communityId,
       label_en: 'New question',
       label_ar: 'سؤال جديد',
@@ -187,7 +232,9 @@ export default function CommunitiesAdmin({ lang }: { lang: 'en' | 'ar' }) {
   };
 
   const updateQuestion = async (q: Question, patch: Partial<Question>) => {
-    const { error } = await supabase.from('community_verification_questions')
+    const adminClient = getAdminClient();
+    if (!adminClient) return;
+    const { error } = await adminClient.from('community_verification_questions')
       .update(patch).eq('id', q.id);
     if (error) { toast({ title: error.message, variant: 'destructive' }); return; }
     fetchAll();
@@ -195,13 +242,17 @@ export default function CommunitiesAdmin({ lang }: { lang: 'en' | 'ar' }) {
 
   const deleteQuestion = async (id: string) => {
     if (!confirm(lang === 'ar' ? 'حذف السؤال؟' : 'Delete question?')) return;
-    await supabase.from('community_verification_questions').delete().eq('id', id);
+    const adminClient = getAdminClient();
+    if (!adminClient) return;
+    await adminClient.from('community_verification_questions').delete().eq('id', id);
     fetchAll();
   };
 
   const loadMembershipAnswers = async (membershipId: string) => {
     if (answers[membershipId]) return;
-    const { data } = await supabase.from('community_verification_answers')
+    const adminClient = getAdminClient();
+    if (!adminClient) return;
+    const { data } = await adminClient.from('community_verification_answers')
       .select('*').eq('membership_id', membershipId);
     setAnswers(prev => ({ ...prev, [membershipId]: data || [] }));
   };
@@ -210,7 +261,9 @@ export default function CommunitiesAdmin({ lang }: { lang: 'en' | 'ar' }) {
     const notes = status === 'rejected'
       ? prompt(lang === 'ar' ? 'سبب الرفض (اختياري)' : 'Rejection reason (optional)') || null
       : null;
-    const { error } = await supabase.from('community_memberships')
+    const adminClient = getAdminClient();
+    if (!adminClient) return;
+    const { error } = await adminClient.from('community_memberships')
       .update({ status, admin_notes: notes }).eq('id', id);
     if (error) { toast({ title: error.message, variant: 'destructive' }); return; }
     toast({ title: status === 'approved'

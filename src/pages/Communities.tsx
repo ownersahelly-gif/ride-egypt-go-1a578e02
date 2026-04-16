@@ -14,9 +14,13 @@ import {
 
 const MODE_LABELS: Record<string, { en: string; ar: string }> = {
   car_sharing: { en: 'Car-sharing', ar: 'مشاركة' },
-  fuel_share: { en: 'Fuel share', ar: 'مشاركة وقود' },
+  fuel_share: { en: 'Paid', ar: 'مدفوع' },
   paid: { en: 'Paid', ar: 'مدفوع' },
 };
+
+const normalizeModes = (modes: string[] = []) => Array.from(new Set(
+  modes.map((mode) => mode === 'fuel_share' ? 'paid' : mode)
+));
 
 export default function Communities() {
   const { user } = useAuth();
@@ -146,7 +150,7 @@ export default function Communities() {
                         </span>
                       )}
                       <div className="flex flex-wrap gap-1">
-                        {(c.allowed_modes || []).map((mode: string) => (
+                        {normalizeModes(c.allowed_modes || []).map((mode: string) => (
                           <Badge key={mode} variant="outline" className="text-[10px] px-1.5 py-0">
                             {lang === 'ar' ? MODE_LABELS[mode]?.ar : MODE_LABELS[mode]?.en}
                           </Badge>
