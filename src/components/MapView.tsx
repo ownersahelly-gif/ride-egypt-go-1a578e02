@@ -196,8 +196,7 @@ const MapView = ({
     <div className={cn('relative overflow-hidden rounded-xl', className || 'h-full w-full')}>
       <GoogleMap
         mapContainerStyle={containerStyle}
-        center={center || cairoCenter}
-        zoom={zoom}
+        {...(center ? { center, zoom } : { defaultCenter: cairoCenter, defaultZoom: zoom })}
         onLoad={onLoad}
         onClick={(e) => onMapClick?.(e.latLng?.lat() || 0, e.latLng?.lng() || 0)}
         options={{
