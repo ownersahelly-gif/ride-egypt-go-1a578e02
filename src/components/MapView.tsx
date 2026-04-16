@@ -123,7 +123,7 @@ const MapView = ({
       }
 
       if (points.length === 1) {
-        mapRef.panTo(points[0]);
+        mapRef.setCenter(points[0]);
         mapRef.setZoom(15);
         return true;
       }
@@ -143,17 +143,22 @@ const MapView = ({
       return timeoutId;
     };
 
-    const timeouts = [fitWithRetry(0), fitWithRetry(150), fitWithRetry(400), fitWithRetry(900)];
-    const idleListener = google.maps.event.addListenerOnce(mapRef, 'idle', () => {
-      google.maps.event.trigger(mapRef, 'resize');
-      applyBounds();
-    });
+    const retryDelays = isNativeApp ? [0, 150, 400, 900] : [0];
+    const timeouts = retryDelays.map(fitWithRetry);
+    const idleListener = isNativeApp
+      ? google.maps.event.addListenerOnce(mapRef, 'idle', () => {
+          google.maps.event.trigger(mapRef, 'resize');
+          applyBounds();
+        })
+      : null;
 
     return () => {
       timeouts.forEach((timeoutId) => window.clearTimeout(timeoutId));
-      google.maps.event.removeListener(idleListener);
+      if (idleListener) {
+        google.maps.event.removeListener(idleListener);
+      }
     };
-  }, [mapRef, isLoaded, origin?.lat, origin?.lng, destination?.lat, destination?.lng, JSON.stringify(markers), JSON.stringify(waypoints)]);
+  }, [isLoaded, isNativeApp, mapRef, origin?.lat, origin?.lng, destination?.lat, destination?.lng, JSON.stringify(markers), JSON.stringify(waypoints)]);
 
   useEffect(() => {
     if (!showUserLocation || userLocation) return;
