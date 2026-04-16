@@ -130,6 +130,19 @@ const CarpoolPost = () => {
 
     setSubmitting(true);
     try {
+      // Build clean overrides only for days that differ from default
+      const cleanOverrides: Record<string, { departure?: string; return?: string }> = {};
+      if (isDaily && customizePerDay) {
+        daysOfWeek.forEach(d => {
+          const o = dayOverrides[d];
+          if (!o) return;
+          const entry: { departure?: string; return?: string } = {};
+          if (o.departure && o.departure !== departureTime) entry.departure = o.departure + ':00';
+          if (hasReturn && o.return && o.return !== returnTime) entry.return = o.return + ':00';
+          if (Object.keys(entry).length) cleanOverrides[String(d)] = entry;
+        });
+      }
+
       const { error } = await supabase.from('carpool_routes').insert({
         user_id: user.id,
         community_id: communityId,
@@ -145,12 +158,13 @@ const CarpoolPost = () => {
         return_time: hasReturn ? returnTime + ':00' : null,
         is_daily: isDaily,
         days_of_week: isDaily ? daysOfWeek : [],
+        day_time_overrides: cleanOverrides,
         share_fuel: mode === 'paid',
         fuel_share_amount: mode === 'paid' ? parseFloat(fuelAmount) || 0 : 0,
         allow_car_swap: allowSwap,
         available_seats: seats,
         notes: notes || null,
-      });
+      } as any);
       if (error) throw error;
       toast({ title: lang === 'ar' ? 'تم!' : 'Posted!', description: lang === 'ar' ? 'تم نشر رحلتك بنجاح' : 'Your ride has been posted' });
       navigate('/carpool');
