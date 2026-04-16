@@ -12,7 +12,7 @@ import MapView from '@/components/MapView';
 import {
   Plus, MapPin, Clock, Users, Fuel, RefreshCw, Car,
   ChevronRight, ChevronLeft, Search, Filter, Shield, AlertCircle,
-  Map, List, X, Navigation, Building2
+  Map, List, X, Navigation, Building2, Check
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
