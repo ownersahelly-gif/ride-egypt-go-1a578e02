@@ -316,7 +316,7 @@ const Carpool = () => {
           </Card>
         )}
 
-        {tab === 'browse' && (
+        {!loading && approvedCommunityCount > 0 && tab === 'browse' && (
           <>
             {/* Search From / To */}
             <div className="space-y-2">
