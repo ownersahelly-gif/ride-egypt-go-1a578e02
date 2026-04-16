@@ -55,6 +55,26 @@ const MapView = ({
     setMapRef(map);
   }, []);
 
+  // Auto-fit bounds to markers / origin / destination
+  useEffect(() => {
+    if (!mapRef || !isLoaded) return;
+    const points: { lat: number; lng: number }[] = [];
+    if (origin) points.push(origin);
+    if (destination) points.push(destination);
+    waypoints.forEach((w) => points.push(w));
+    markers.forEach((m) => points.push({ lat: m.lat, lng: m.lng }));
+
+    if (points.length === 0) return;
+    if (points.length === 1) {
+      mapRef.panTo(points[0]);
+      mapRef.setZoom(15);
+      return;
+    }
+    const bounds = new google.maps.LatLngBounds();
+    points.forEach((p) => bounds.extend(p));
+    mapRef.fitBounds(bounds, { top: 60, bottom: 60, left: 60, right: 60 });
+  }, [mapRef, isLoaded, origin?.lat, origin?.lng, destination?.lat, destination?.lng, JSON.stringify(markers), JSON.stringify(waypoints)]);
+
   // Auto-locate user on mount
   useEffect(() => {
     if (!showUserLocation || userLocation) return;
