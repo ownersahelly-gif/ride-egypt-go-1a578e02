@@ -1091,9 +1091,9 @@ const Dashboard = () => {
       </div>
 
       <div
-        className={`${mapVisible ? "shrink-0" : "flex-1 min-h-0"} overflow-y-auto bg-card border-t border-border`}
+        className={`${mapVisible && step !== "search" ? "shrink-0" : "flex-1 min-h-0"} overflow-y-auto bg-card border-t border-border`}
         style={{
-          maxHeight: mapVisible ? (step === "search" ? "auto" : "50dvh") : undefined,
+          maxHeight: mapVisible && step !== "search" ? "50dvh" : undefined,
           paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.5rem)",
           WebkitOverflowScrolling: "touch",
         }}
