@@ -21,6 +21,7 @@ const Wallet = () => {
   const [expiredPurchases, setExpiredPurchases] = useState<any[]>([]);
   const [refunds, setRefunds] = useState<any[]>([]);
   const [routes, setRoutes] = useState<Record<string, any>>({});
+  const [availableBundles, setAvailableBundles] = useState<any[]>([]);
 
   useEffect(() => {
     if (!user) return;
@@ -31,11 +32,13 @@ const Wallet = () => {
         { data: purchases },
         { data: refs },
         { data: routeList },
+        { data: bundles },
       ] = await Promise.all([
         supabase.from('profiles').select('*').eq('user_id', user.id).single(),
         supabase.from('bundle_purchases').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
         supabase.from('refunds').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
         supabase.from('routes').select('id, name_en, name_ar'),
+        supabase.from('ride_bundles').select('*').eq('is_active', true).order('price'),
       ]);
       setProfile(prof);
       const now = new Date().toISOString();
@@ -45,6 +48,7 @@ const Wallet = () => {
       const rm: Record<string, any> = {};
       (routeList || []).forEach(r => { rm[r.id] = r; });
       setRoutes(rm);
+      setAvailableBundles(bundles || []);
       setLoading(false);
     };
     fetch();
@@ -72,7 +76,10 @@ const Wallet = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background pb-24">
+    <div
+      className="min-h-screen bg-background"
+      style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 6rem)' }}
+    >
       {/* Header */}
       <div className="bg-primary text-primary-foreground px-4 pt-12 pb-8">
         <div className="flex items-center gap-3 mb-6">
@@ -96,13 +103,36 @@ const Wallet = () => {
             {lang === 'ar' ? 'الباقات النشطة' : 'Active Packages'}
           </h2>
           {activePurchases.length === 0 ? (
-            <div className="bg-card border border-border rounded-2xl p-6 text-center">
-              <Package className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">{lang === 'ar' ? 'لا توجد باقات نشطة' : 'No active packages'}</p>
-              <Link to="/dashboard" className="text-sm text-primary font-medium mt-2 inline-block">
-                {lang === 'ar' ? 'تصفح الباقات' : 'Browse packages'}
-              </Link>
-            </div>
+            availableBundles.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground mb-2">
+                  {lang === 'ar' ? 'الباقات المتاحة للشراء:' : 'Available packages to purchase:'}
+                </p>
+                {availableBundles.map(b => (
+                  <Link
+                    key={b.id}
+                    to="/dashboard"
+                    className="block bg-card border border-border rounded-xl p-4 hover:border-secondary transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-bold text-foreground">{routeName(b.route_id) || (lang === 'ar' ? 'باقة' : 'Bundle')}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {b.ride_count} {lang === 'ar' ? 'رحلة' : 'rides'}
+                          {b.discount_percentage > 0 && ` · ${b.discount_percentage}% ${lang === 'ar' ? 'خصم' : 'off'}`}
+                        </p>
+                      </div>
+                      <p className="font-bold text-secondary">{b.price} {lang === 'ar' ? 'ج' : 'EGP'}</p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-card border border-border rounded-2xl p-6 text-center">
+                <Package className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">{lang === 'ar' ? 'لا توجد باقات متاحة حالياً' : 'No packages available right now'}</p>
+              </div>
+            )
           ) : (
             <div className="space-y-3">
               {activePurchases.map(p => (
